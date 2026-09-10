@@ -1,5 +1,5 @@
 #define MyAppName "Lumi Docking Station"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.2.1"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName=Lumi Docking Station
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\artifacts
-OutputBaseFilename=Lumi-Docking-Station-Setup-0.2.0
+OutputBaseFilename=Lumi-Docking-Station-Setup-0.2.1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -23,6 +23,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Files]
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\publish\platform-tools\*"; DestDir: "{localappdata}\Android\Sdk\platform-tools"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Lumi Docking Station"; Filename: "{app}\{#MyAppExeName}"
