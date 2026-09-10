@@ -1,4 +1,4 @@
-name: Build Workstation 0.2.1
+name: Build Workstation 0.3.0
 
 on:
   push:
@@ -61,15 +61,16 @@ jobs:
       - name: Verify installer
         shell: powershell
         run: |
-          $exe = 'workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.1.exe'
+          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.3.0.exe'
           if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
           if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing before upload' }
+          if (-not (Test-Path 'workstation020/publish/LumiDockingStation.exe')) { throw 'Workstation binary missing before upload' }
           Get-Item $exe | Format-List FullName,Length,LastWriteTime
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Docking-Station-Setup-0.2.1
-          path: workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.1.exe
+          name: Lumi-Workstation-Setup-0.3.0
+          path: workstation020/artifacts/Lumi-Workstation-Setup-0.3.0.exe
           if-no-files-found: error
           retention-days: 14
