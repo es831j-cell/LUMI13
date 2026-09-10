@@ -1,0 +1,59 @@
+name: Build Workstation 0.2.0
+
+on:
+  push:
+    branches:
+      - workstation-020-build
+    paths:
+      - 'workstation020/**'
+      - '.github/workflows/build-workstation-020.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore workstation020/LumiDockingStation.csproj
+
+      - name: Build
+        run: dotnet build workstation020/LumiDockingStation.csproj -c Release --no-restore
+
+      - name: Publish self-contained x64
+        run: dotnet publish workstation020/LumiDockingStation.csproj -c Release -r win-x64 --self-contained true -o workstation020/publish
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: powershell
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
+          & $iscc 'workstation020\installer\LumiDockingStation.iss'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify installer
+        shell: powershell
+        run: |
+          $exe = 'workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.0.exe'
+          if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
+          Get-Item $exe | Format-List FullName,Length,LastWriteTime
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumi-Docking-Station-Setup-0.2.0
+          path: workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.0.exe
+          if-no-files-found: error
+          retention-days: 14
