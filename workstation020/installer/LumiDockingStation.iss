@@ -1,5 +1,5 @@
-#define MyAppName "Lumi Docking Station"
-#define MyAppVersion "0.2.1"
+#define MyAppName "Lumi Workstation"
+#define MyAppVersion "0.3.0"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
@@ -9,11 +9,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\Lumi Docking Station
-DefaultGroupName=Lumi Docking Station
+DefaultGroupName=Lumi Workstation
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\artifacts
-OutputBaseFilename=Lumi-Docking-Station-Setup-0.2.1
+OutputBaseFilename=Lumi-Workstation-Setup-0.3.0
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -26,11 +26,11 @@ Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cr
 Source: "..\publish\platform-tools\*"; DestDir: "{localappdata}\Android\Sdk\platform-tools"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Lumi Docking Station"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\Lumi Docking Station"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\Lumi Workstation"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\Lumi Workstation"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Lumi Docking Station"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Lumi Workstation"; Flags: nowait postinstall skipifsilent
