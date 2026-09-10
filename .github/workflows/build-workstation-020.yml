@@ -1,4 +1,4 @@
-name: Build Workstation 0.2.0
+name: Build Workstation 0.2.1
 
 on:
   push:
@@ -31,6 +31,21 @@ jobs:
       - name: Publish self-contained x64
         run: dotnet publish workstation020/LumiDockingStation.csproj -c Release -r win-x64 --self-contained true -o workstation020/publish
 
+      - name: Bundle Android platform-tools
+        shell: powershell
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'platform-tools.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'android-platform-tools'
+          Invoke-WebRequest -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $source = Join-Path $extract 'platform-tools'
+          $dest = 'workstation020/publish/platform-tools'
+          if (-not (Test-Path (Join-Path $source 'adb.exe'))) { throw 'Google platform-tools archive did not contain adb.exe' }
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force
+          if (-not (Test-Path (Join-Path $dest 'adb.exe'))) { throw 'adb.exe was not bundled into publish output' }
+          & (Join-Path $dest 'adb.exe') version
+
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y --no-progress
@@ -46,14 +61,15 @@ jobs:
       - name: Verify installer
         shell: powershell
         run: |
-          $exe = 'workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.0.exe'
+          $exe = 'workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.1.exe'
           if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
+          if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing before upload' }
           Get-Item $exe | Format-List FullName,Length,LastWriteTime
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Docking-Station-Setup-0.2.0
-          path: workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.0.exe
+          name: Lumi-Docking-Station-Setup-0.2.1
+          path: workstation020/artifacts/Lumi-Docking-Station-Setup-0.2.1.exe
           if-no-files-found: error
           retention-days: 14
