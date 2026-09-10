@@ -1,5 +1,5 @@
 #define MyAppName "Lumi Workstation"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName=Lumi Workstation
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\artifacts
-OutputBaseFilename=Lumi-Workstation-Setup-0.3.0
+OutputBaseFilename=Lumi-Workstation-Setup-0.3.1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -22,8 +22,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Files]
+; Workstation always carries its own private platform-tools under {app}\platform-tools.
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\publish\platform-tools\*"; DestDir: "{localappdata}\Android\Sdk\platform-tools"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Seed the standard Android SDK location only when each file is absent.
+; Never overwrite a live adb.exe because the ADB server may have it locked.
+Source: "..\publish\platform-tools\*"; DestDir: "{localappdata}\Android\Sdk\platform-tools"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Lumi Workstation"; Filename: "{app}\{#MyAppExeName}"
