@@ -14,6 +14,8 @@ public partial class MainWindow
     private static readonly bool SelfEvaluationV2Hook = RegisterSelfEvaluationV2Hook();
     private readonly SemaphoreSlim _selfEvaluationGate = new(1, 1);
     private const string CanonicalRepoUrl = "https://github.com/es831j-cell/Lumi-APK-Factory-Build.git";
+    private string RepairValidationFailureMarkerV2 => Path.Combine(RuntimeRoot, "last-build-validation-failure.json");
+    private string LastRepairReportV2 => Path.Combine(RuntimeRoot, "last-self-repair.txt");
 
     private static bool RegisterSelfEvaluationV2Hook()
     {
@@ -43,9 +45,20 @@ public partial class MainWindow
         await window.ExecuteSelfEvaluationIntentV2Async(text);
     }
 
+    private static bool IsRepairHistoryIntentV2(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var text = raw.Trim().ToLowerInvariant();
+        return text.Contains("what was fixed") || text.Contains("what did you fix")
+            || text.Contains("what have you fixed") || text.Contains("what changed")
+            || text.Contains("last repair") || text.Contains("repair result")
+            || text.Contains("repair results");
+    }
+
     private static bool IsSelfEvaluationIntentV2(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return false;
+        if (IsRepairHistoryIntentV2(raw)) return true;
         var text = raw.Trim().ToLowerInvariant();
         return text.Contains("what is wrong with you") || text.Contains("what's wrong with you")
             || text.Contains("what is wrong with your code") || text.Contains("what's wrong with your code")
@@ -68,6 +81,17 @@ public partial class MainWindow
     {
         var instruction = raw.Trim();
         if (string.IsNullOrWhiteSpace(instruction)) return;
+
+        if (IsRepairHistoryIntentV2(instruction))
+        {
+            CommandInputBox.Clear();
+            AppendCommand("YOU > " + instruction);
+            ShowLastRepairTruthV2();
+            SaveInstruction(instruction, "SELF_REPAIR_HISTORY_ANSWERED");
+            CommandInputBox.Focus();
+            return;
+        }
+
         if (!await _selfEvaluationGate.WaitAsync(0))
         {
             AppendCommand("LUMI > A self-evaluation or repair cycle is already running.");
@@ -93,6 +117,25 @@ public partial class MainWindow
         {
             _selfEvaluationGate.Release();
             CommandInputBox.Focus();
+        }
+    }
+
+    private void ShowLastRepairTruthV2()
+    {
+        try
+        {
+            if (!File.Exists(LastRepairReportV2))
+            {
+                AppendCommand("LUMI > I do not have a completed self-repair evidence report yet.");
+                return;
+            }
+            var report = File.ReadAllText(LastRepairReportV2).Trim();
+            AppendCommand("LUMI > LAST SELF-REPAIR EVIDENCE\n" + Clip(report, 12000));
+            StatusText.Text = "Last repair evidence shown";
+        }
+        catch (Exception ex)
+        {
+            AppendCommand("LUMI > I could not read the last repair evidence: " + ex.Message);
         }
     }
 
@@ -140,6 +183,8 @@ public partial class MainWindow
         if (sourceReady && !gitReady) warnings.Add("Live source exists but has no local Git baseline.");
         if (!toolchainReady) failures.Add("Windows Android build toolchain is incomplete (Gradle 8.9, JDK 17, Android API 35/build-tools required).");
         if (!signingReady) failures.Add("Trusted Lumi signing identity is not commissioned into the Windows DPAPI vault.");
+        if (File.Exists(RepairValidationFailureMarkerV2))
+            failures.Add("The most recent self-repair validation build failed. This gate remains FAIL until a real local Gradle build passes.");
         if (enabledProviders == 0) warnings.Add("No enabled reasoning provider is configured; local tools still work.");
         if (!phoneBound) warnings.Add("No phone is currently bound; phone-only validation/deployment is unavailable.");
         if (phoneBound && !dockReady) warnings.Add("Phone is visible but no verified dock manifest was found.");
@@ -201,9 +246,26 @@ public partial class MainWindow
         {
             AppendCommand("LUMI > Source, toolchain and signing identity are ready. Running a real local build as repair validation.");
             await BuildWithSigningAsync(false);
-            actions.Add(StatusText.Text.Contains("PASS", StringComparison.OrdinalIgnoreCase)
-                ? "PASS: local Gradle build validated the commissioned source."
-                : "FAIL: local Gradle build did not pass; diagnostics contain the build failure.");
+            var buildPassed = StatusText.Text.Contains("PASS", StringComparison.OrdinalIgnoreCase);
+            if (buildPassed)
+            {
+                actions.Add("PASS: local Gradle build validated the commissioned source.");
+                TryDeleteFileV2(RepairValidationFailureMarkerV2);
+            }
+            else
+            {
+                actions.Add("FAIL: local Gradle build did not pass. A failed validation build is a release-gate failure and cannot be promoted to PASS_WITH_WARNINGS.");
+                var diagnosticEvidence = await DiagnoseGradleFailureV2Async(liveSource);
+                await File.WriteAllTextAsync(RepairValidationFailureMarkerV2, JsonSerializer.Serialize(new
+                {
+                    at = DateTimeOffset.Now,
+                    state = "FAIL",
+                    reason = "local Gradle validation build failed",
+                    evidence = diagnosticEvidence.EvidencePath,
+                    excerpt = diagnosticEvidence.Excerpt
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                AppendCommand("LUMI > BUILD ROOT-CAUSE EVIDENCE\n" + diagnosticEvidence.Excerpt + "\nEvidence: " + diagnosticEvidence.EvidencePath);
+            }
         }
         else
         {
@@ -212,25 +274,95 @@ public partial class MainWindow
         }
 
         var after = await RunSelfAuditV2Async(false);
+        var actionFailures = actions.Where(x => x.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase)
+            || x.StartsWith("BLOCKED:", StringComparison.OrdinalIgnoreCase)).ToList();
+        var finalState = after.Failures.Count > 0 || actionFailures.Count > 0 ? "FAIL" : after.State;
+        var finalFailures = new List<string>(after.Failures);
+        foreach (var failedAction in actionFailures)
+        {
+            var normalized = Regex.Replace(failedAction, @"^(FAIL|BLOCKED):\s*", string.Empty, RegexOptions.IgnoreCase).Trim();
+            if (!finalFailures.Contains(normalized, StringComparer.OrdinalIgnoreCase)) finalFailures.Add(normalized);
+        }
+
         var summary = new StringBuilder();
         summary.AppendLine("SELF-REPAIR CYCLE");
         summary.AppendLine("Before: " + before.State);
         foreach (var action in actions) summary.AppendLine("• " + action);
-        summary.AppendLine("After: " + after.State);
-        if (after.Failures.Count > 0)
+        summary.AppendLine("After: " + finalState);
+        if (finalFailures.Count > 0)
         {
             summary.AppendLine("Remaining failures:");
-            foreach (var failure in after.Failures) summary.AppendLine("• " + failure);
+            foreach (var failure in finalFailures) summary.AppendLine("• " + failure);
         }
         if (after.Warnings.Count > 0)
         {
             summary.AppendLine("Warnings:");
             foreach (var warning in after.Warnings) summary.AppendLine("• " + warning);
         }
-        AppendCommand("LUMI > " + summary.ToString().TrimEnd());
-        WriteRuntimeLedger("self.repair", new { instruction, before = before.State, after = after.State, actions });
-        SaveInstruction(instruction, after.Failures.Count == 0 ? "SELF_REPAIR_COMPLETED" : "SELF_REPAIR_BLOCKED");
-        StatusText.Text = after.Failures.Count == 0 ? "Self-repair cycle complete" : "Self-repair blocked by remaining failure";
+
+        var finalReport = summary.ToString().TrimEnd();
+        AppendCommand("LUMI > " + finalReport);
+        Directory.CreateDirectory(RuntimeRoot);
+        await File.WriteAllTextAsync(LastRepairReportV2, finalReport);
+        WriteRuntimeLedger("self.repair", new { instruction, before = before.State, after = finalState, actions, failures = finalFailures, warnings = after.Warnings });
+        SaveInstruction(instruction, finalState == "FAIL" ? "SELF_REPAIR_BLOCKED" : "SELF_REPAIR_COMPLETED");
+        StatusText.Text = finalState == "FAIL" ? "Self-repair blocked by remaining failure" : "Self-repair cycle complete";
+    }
+
+    private async Task<GradleFailureEvidenceV2> DiagnoseGradleFailureV2Async(string liveSource)
+    {
+        var dir = Path.Combine(WorkstationRoot, "Diagnostics", "BuildFailures");
+        Directory.CreateDirectory(dir);
+        var evidencePath = Path.Combine(dir, "gradle-failure-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
+        string? staged = null;
+        try
+        {
+            PrepareBundledAndroidToolchainEnvironment();
+            EnsureBundledGradleShim(liveSource);
+            staged = StageSigningProperties(liveSource);
+            var gradle = Path.Combine(liveSource, "gradlew.bat");
+            var result = await RunProcessAsync(gradle, "assembleDebug --stacktrace --console=plain", liveSource, 20 * 60 * 1000);
+            var combined = "EXIT CODE: " + result.ExitCode + Environment.NewLine
+                + "=== STDOUT ===" + Environment.NewLine + result.Output + Environment.NewLine
+                + "=== STDERR ===" + Environment.NewLine + result.Error;
+            await File.WriteAllTextAsync(evidencePath, combined);
+            AppendDiagnostic("Gradle root-cause diagnostic saved: " + evidencePath + Environment.NewLine + Clip(combined, 12000));
+            return new GradleFailureEvidenceV2(evidencePath, ExtractGradleRootCauseV2(combined));
+        }
+        catch (Exception ex)
+        {
+            var text = "Diagnostic Gradle rerun failed: " + ex;
+            await File.WriteAllTextAsync(evidencePath, text);
+            AppendDiagnostic(text);
+            return new GradleFailureEvidenceV2(evidencePath, Clip(text, 2000));
+        }
+        finally
+        {
+            if (staged is not null) TryDeleteFileV2(staged);
+        }
+    }
+
+    private static string ExtractGradleRootCauseV2(string text)
+    {
+        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var important = lines.Where(line => line.Contains("FAILURE:", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("What went wrong", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("Execution failed", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("Could not", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("error:", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("Caused by:", StringComparison.OrdinalIgnoreCase))
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .TakeLast(24)
+            .ToList();
+        if (important.Count == 0)
+            important = lines.Where(line => !string.IsNullOrWhiteSpace(line)).TakeLast(30).ToList();
+        return Clip(string.Join(Environment.NewLine, important), 3500);
+    }
+
+    private static void TryDeleteFileV2(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private void EnsureWorkstationDirectoriesV2(List<string> actions)
@@ -503,6 +635,7 @@ public partial class MainWindow
         return b.ToString().TrimEnd();
     }
 
+    private sealed record GradleFailureEvidenceV2(string EvidencePath, string Excerpt);
     private sealed record CommissionResult(bool Success, string Message);
     private sealed record SelfAuditSnapshotV2(DateTimeOffset EvaluatedAt, string State, bool RuntimeReady, int ToolCount, int EnabledProviders,
         bool PhoneBound, bool DockReady, bool SourceReady, bool GitReady, bool ToolchainReady, bool SigningReady,
