@@ -124,16 +124,24 @@ public partial class MainWindow
         Directory.CreateDirectory(temp);
         try
         {
-            var fetchMain = await RunGitNonInteractiveAsync(git, "fetch --depth 1 origin main", canonicalRoot, 5 * 60 * 1000);
+            const string factoryRef = "refs/remotes/origin/main";
+            var fetchMain = await RunGitNonInteractiveAsync(git,
+                "fetch --depth 1 origin +refs/heads/main:refs/remotes/origin/main",
+                canonicalRoot, 5 * 60 * 1000);
             if (fetchMain.ExitCode != 0)
-                return new CommissionResult(false, "BLOCKED: could not fetch trusted Factory signing source from origin/main. " + Clip(fetchMain.Error + fetchMain.Output, 800));
+                return new CommissionResult(false, "BLOCKED: could not fetch trusted Factory signing source into origin/main. " + Clip(fetchMain.Error + fetchMain.Output, 800));
+
+            var verifyMain = await RunGitNonInteractiveAsync(git,
+                "rev-parse --verify refs/remotes/origin/main^{commit}", canonicalRoot, 120000);
+            if (verifyMain.ExitCode != 0)
+                return new CommissionResult(false, "BLOCKED: trusted Factory remote main ref was not created after fetch. " + Clip(verifyMain.Error + verifyMain.Output, 800));
 
             var containerZip = Path.Combine(temp, "factory-container.zip");
             var archive = await RunGitNonInteractiveAsync(git,
-                $"archive --format=zip --output=\"{containerZip}\" origin/main apkfactory-project.zip",
+                $"archive --format=zip --output=\"{containerZip}\" {factoryRef} apkfactory-project.zip",
                 canonicalRoot, 5 * 60 * 1000);
             if (archive.ExitCode != 0 || !File.Exists(containerZip))
-                return new CommissionResult(false, "BLOCKED: trusted apkfactory-project.zip could not be extracted from origin/main. " + Clip(archive.Error + archive.Output, 800));
+                return new CommissionResult(false, "BLOCKED: trusted apkfactory-project.zip could not be extracted from verified origin/main. " + Clip(archive.Error + archive.Output, 800));
 
             ZipFile.ExtractToDirectory(containerZip, temp, true);
             var factoryZip = Path.Combine(temp, "apkfactory-project.zip");
@@ -162,7 +170,7 @@ public partial class MainWindow
             var manifest = new
             {
                 commissionedAt = DateTimeOffset.Now,
-                source = "origin/main:apkfactory-project.zip",
+                source = "refs/remotes/origin/main:apkfactory-project.zip",
                 keystoreSha256 = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(SigningKeystore))).ToLowerInvariant(),
                 protection = "Windows DPAPI CurrentUser",
                 secretsPrinted = false
