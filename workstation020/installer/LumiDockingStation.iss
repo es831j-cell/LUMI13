@@ -1,5 +1,5 @@
 #define MyAppName "Lumi Workstation"
-#define MyAppVersion "0.6.5"
+#define MyAppVersion "0.6.6"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
