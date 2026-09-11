@@ -1,5 +1,5 @@
 #define MyAppName "Lumi Workstation"
-#define MyAppVersion "0.6.4"
+#define MyAppVersion "0.6.5"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName=Lumi Workstation
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\artifacts
-OutputBaseFilename=Lumi-Workstation-Setup-0.6.4
+OutputBaseFilename=Lumi-Workstation-Setup-0.6.5
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -43,16 +43,11 @@ var
   ResultCode: Integer;
   ExistingAdb: String;
 begin
-  { Stop Lumi first so its phone watcher cannot immediately restart ADB. }
   Exec(ExpandConstant('{cmd}'), '/C taskkill /IM "{#MyAppExeName}" /F >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);
-
-  { Ask the currently installed bundled ADB server to shut down cleanly. }
   ExistingAdb := ExpandConstant('{app}\platform-tools\adb.exe');
   if FileExists(ExistingAdb) then
     Exec(ExistingAdb, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-  { If a stale adb.exe survived, release the executable lock before replacement. }
   Exec(ExpandConstant('{cmd}'), '/C taskkill /IM adb.exe /F >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(1000);
   Result := '';
