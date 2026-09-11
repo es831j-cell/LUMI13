@@ -1,5 +1,5 @@
 #define MyAppName "Lumi Workstation"
-#define MyAppVersion "0.6.1"
+#define MyAppVersion "0.6.2"
 #define MyAppPublisher "Distressed Elk Acres"
 #define MyAppExeName "LumiDockingStation.exe"
 
@@ -13,7 +13,7 @@ DefaultGroupName=Lumi Workstation
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\artifacts
-OutputBaseFilename=Lumi-Workstation-Setup-0.6.1
+OutputBaseFilename=Lumi-Workstation-Setup-0.6.2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
