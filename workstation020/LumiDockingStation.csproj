@@ -11,7 +11,7 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Product>Lumi Workstation</Product>
     <Company>Distressed Elk Acres</Company>
   </PropertyGroup>
