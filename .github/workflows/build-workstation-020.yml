@@ -131,16 +131,34 @@ jobs:
           if (-not (Test-Path $gradle)) { throw 'Gradle 8.9 was not bundled correctly' }
           & $gradle --version
 
-      - name: Bundle JDK 17
+      - name: Bundle slim JDK 17
         shell: powershell
         run: |
           if (-not $env:JAVA_HOME) { throw 'JAVA_HOME missing after setup-java' }
           $dest = 'workstation020/publish/toolchain/jdk'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item -Path (Join-Path $env:JAVA_HOME '*') -Destination $dest -Recurse -Force
+          # Gradle/AGP needs the JDK runtime, compiler and standard modules. jmods are only
+          # needed to build custom Java runtimes with jlink and are not used by Lumi builds.
+          foreach ($unused in @('jmods','legal','man','include')) {
+            $p = Join-Path $dest $unused
+            if (Test-Path $p) { Remove-Item $p -Recurse -Force }
+          }
+          foreach ($unusedFile in @('lib\src.zip','release')) {
+            $p = Join-Path $dest $unusedFile
+            if (Test-Path $p) { Remove-Item $p -Force }
+          }
           $java = Join-Path $dest 'bin\java.exe'
-          if (-not (Test-Path $java)) { throw 'JDK 17 java.exe missing from bundled toolchain' }
+          $javac = Join-Path $dest 'bin\javac.exe'
+          $jar = Join-Path $dest 'bin\jar.exe'
+          foreach ($required in @($java,$javac,$jar,(Join-Path $dest 'lib\modules'))) {
+            if (-not (Test-Path $required)) { throw "Slim JDK lost required build component: $required" }
+          }
           & $java -version
+          & $javac -version
+          & $jar --version
+          $bytes = (Get-ChildItem $dest -File -Recurse | Measure-Object Length -Sum).Sum
+          Write-Host ("Slim JDK bytes: {0}" -f $bytes)
 
       - name: Bundle Android API 35 build SDK
         shell: powershell
@@ -150,21 +168,37 @@ jobs:
           if (-not $sdk) { throw 'Hosted runner Android SDK root is unavailable' }
           $sdkManager = Join-Path $sdk 'cmdline-tools\latest\bin\sdkmanager.bat'
           $platform = Join-Path $sdk 'platforms\android-35\android.jar'
-          $bt34 = Join-Path $sdk 'build-tools\34.0.0\aapt2.exe'
           $bt35 = Join-Path $sdk 'build-tools\35.0.0\aapt2.exe'
-          if ((-not (Test-Path $platform)) -or (-not (Test-Path $bt34)) -or (-not (Test-Path $bt35))) {
+          if ((-not (Test-Path $platform)) -or (-not (Test-Path $bt35))) {
             if (-not (Test-Path $sdkManager)) { throw 'sdkmanager not available to prepare API 35 build SDK' }
-            & $sdkManager 'platforms;android-35' 'build-tools;34.0.0' 'build-tools;35.0.0'
+            & $sdkManager 'platforms;android-35' 'build-tools;35.0.0'
             if ($LASTEXITCODE -ne 0) { throw 'sdkmanager failed preparing API 35 build SDK' }
           }
           $dest = 'workstation020/publish/toolchain/android-sdk'
           New-Item -ItemType Directory -Force -Path (Join-Path $dest 'platforms') | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $dest 'build-tools') | Out-Null
           Copy-Item -Path (Join-Path $sdk 'platforms\android-35') -Destination (Join-Path $dest 'platforms\android-35') -Recurse -Force
-          Copy-Item -Path (Join-Path $sdk 'build-tools\34.0.0') -Destination (Join-Path $dest 'build-tools\34.0.0') -Recurse -Force
           Copy-Item -Path (Join-Path $sdk 'build-tools\35.0.0') -Destination (Join-Path $dest 'build-tools\35.0.0') -Recurse -Force
           if (-not (Test-Path (Join-Path $dest 'platforms\android-35\android.jar'))) { throw 'Bundled Android API 35 platform missing' }
-          if (-not (Test-Path (Join-Path $dest 'build-tools\34.0.0\aapt2.exe'))) { throw 'Bundled Android Build Tools 34.0.0 missing' }
+          if (-not (Test-Path (Join-Path $dest 'build-tools\35.0.0\aapt2.exe'))) { throw 'Bundled Android Build Tools 35.0.0 missing' }
+          $bytes = (Get-ChildItem $dest -File -Recurse | Measure-Object Length -Sum).Sum
+          Write-Host ("Android SDK bytes: {0}" -f $bytes)
+
+      - name: Verify slim toolchain before installer
+        shell: powershell
+        run: |
+          $java = 'workstation020/publish/toolchain/jdk/bin/java.exe'
+          $javac = 'workstation020/publish/toolchain/jdk/bin/javac.exe'
+          $gradle = 'workstation020/publish/toolchain/gradle/gradle-8.9/bin/gradle.bat'
+          $sdk = (Resolve-Path 'workstation020/publish/toolchain/android-sdk').Path
+          if (-not (Test-Path $java) -or -not (Test-Path $javac) -or -not (Test-Path $gradle)) { throw 'Slim toolchain verification failed' }
+          $env:JAVA_HOME = (Resolve-Path 'workstation020/publish/toolchain/jdk').Path
+          $env:ANDROID_HOME = $sdk
+          $env:ANDROID_SDK_ROOT = $sdk
+          & $java -version
+          & $javac -version
+          & $gradle --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Gradle cannot run on slim JDK' }
 
       - name: Install Inno Setup
         shell: powershell
@@ -186,13 +220,16 @@ jobs:
           if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing' }
           if (-not (Test-Path 'workstation020/publish/git/cmd/git.exe')) { throw 'Bundled git.exe missing' }
           if (-not (Test-Path 'workstation020/publish/toolchain/gradle/gradle-8.9/bin/gradle.bat')) { throw 'Bundled Gradle 8.9 missing' }
-          if (-not (Test-Path 'workstation020/publish/toolchain/jdk/bin/java.exe')) { throw 'Bundled JDK 17 missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/jdk/bin/java.exe')) { throw 'Bundled JDK 17 java missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/jdk/bin/javac.exe')) { throw 'Bundled JDK 17 javac missing' }
           if (-not (Test-Path 'workstation020/publish/toolchain/android-sdk/platforms/android-35/android.jar')) { throw 'Bundled API 35 missing' }
-          if (-not (Test-Path 'workstation020/publish/toolchain/android-sdk/build-tools/34.0.0/aapt2.exe')) { throw 'Bundled Build Tools 34 missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/android-sdk/build-tools/35.0.0/aapt2.exe')) { throw 'Bundled Build Tools 35 missing' }
           $gcm = Get-ChildItem -Path 'workstation020/publish/git' -Recurse -Filter 'git-credential-manager.exe' | Select-Object -First 1
           if (-not $gcm) { throw 'Bundled Git Credential Manager missing' }
           if (-not (Test-Path 'workstation020/publish/LumiDockingStation.exe')) { throw 'Workstation binary missing' }
-          Get-Item $exe | Format-List FullName,Length,LastWriteTime
+          $item = Get-Item $exe
+          $item | Format-List FullName,Length,LastWriteTime
+          if ($item.Length -ge 500MB) { throw "Installer is too large for delivery bridge: $($item.Length) bytes" }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
