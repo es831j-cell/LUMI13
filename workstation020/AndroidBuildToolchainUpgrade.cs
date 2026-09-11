@@ -190,7 +190,7 @@ public partial class MainWindow
         var props = Encoding.UTF8.GetString(clear);
         var storePath = SigningKeystore.Replace('\\', '/');
         if (Regex.IsMatch(props, @"(?m)^\s*storeFile\s*="))
-            props = Regex.Replace(props, @"(?m)^\s*storeFile\s*=.*$", "storeFile=" + storePath, 1);
+            props = new Regex(@"(?m)^\s*storeFile\s*=.*$").Replace(props, "storeFile=" + storePath, 1);
         else props = "storeFile=" + storePath + Environment.NewLine + props;
         var target = Path.Combine(sourceRoot, "app", "keystore.properties");
         File.WriteAllText(target, props, new UTF8Encoding(false));
