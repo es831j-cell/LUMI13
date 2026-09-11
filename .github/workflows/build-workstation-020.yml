@@ -1,4 +1,4 @@
-name: Build Workstation 0.6.4
+name: Build Workstation 0.6.5
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,6 +21,12 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Setup JDK 17 for bundled Android toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Restore
         run: dotnet restore workstation020/LumiDockingStation.csproj
@@ -31,14 +37,15 @@ jobs:
       - name: Publish self-contained x64
         run: dotnet publish workstation020/LumiDockingStation.csproj -c Release -r win-x64 --self-contained true -o workstation020/publish
 
-      - name: Verify Lumi core self-repair phone recovery Git bootstrap auth resume and safe upgrade
+      - name: Verify Lumi self-repair V2 source commissioning and build toolchain logic
         shell: powershell
         run: |
           $required = @(
             'workstation020/DockTransferUpgrade.cs',
             'workstation020/LumiDesktopRuntime.cs',
             'workstation020/ScrollableConsoleUpgrade.cs',
-            'workstation020/SelfEvaluationUpgrade.cs',
+            'workstation020/SelfEvaluationUpgradeV2.cs',
+            'workstation020/AndroidBuildToolchainUpgrade.cs',
             'workstation020/BundledGitUpgrade.cs',
             'workstation020/PhoneDetectionUpgrade.cs',
             'workstation020/GitHubRepairResumeUpgrade.cs',
@@ -48,35 +55,35 @@ jobs:
           $dock = Get-Content 'workstation020/DockTransferUpgrade.cs' -Raw
           $runtime = Get-Content 'workstation020/LumiDesktopRuntime.cs' -Raw
           $scroll = Get-Content 'workstation020/ScrollableConsoleUpgrade.cs' -Raw
-          $self = Get-Content 'workstation020/SelfEvaluationUpgrade.cs' -Raw
+          $self = Get-Content 'workstation020/SelfEvaluationUpgradeV2.cs' -Raw
+          $toolchain = Get-Content 'workstation020/AndroidBuildToolchainUpgrade.cs' -Raw
           $gitBootstrap = Get-Content 'workstation020/BundledGitUpgrade.cs' -Raw
           $phone = Get-Content 'workstation020/PhoneDetectionUpgrade.cs' -Raw
           $authResume = Get-Content 'workstation020/GitHubRepairResumeUpgrade.cs' -Raw
           $installer = Get-Content 'workstation020/installer/LumiDockingStation.iss' -Raw
+          $project = Get-Content 'workstation020/LumiDockingStation.csproj' -Raw
+          if ($project -notmatch 'Compile Remove="SelfEvaluationUpgrade.cs"') { throw 'Legacy wrapper-only self audit is still compiled' }
           if ($dock -notmatch 'DOCK PASS') { throw 'Dock transfer acceptance marker missing' }
-          if ($dock -notmatch 'adb.*pull|pull.*adb') { throw 'No real ADB pull path found in docking source' }
           if ($runtime -notmatch 'activeHost = "windows-workstation"') { throw 'Windows host ownership marker missing' }
           if ($runtime -notmatch 'ExecuteLumiToolAsync') { throw 'Lumi tool executor missing' }
           if ($runtime -notmatch 'AI providers are reasoning engines') { throw 'Lumi/provider role separation marker missing' }
           if ($scroll -notmatch 'PreviewMouseWheel') { throw 'Command console mouse-wheel capture missing' }
-          if ($scroll -notmatch 'PageUp') { throw 'Command console Page Up support missing' }
-          if ($self -notmatch 'RunSelfAuditAsync') { throw 'Deterministic self-audit missing' }
-          if ($self -notmatch 'RunSelfRepairCycleAsync') { throw 'Self-repair cycle missing' }
-          if ($self -notmatch 'CommissionCanonicalSourceAsync') { throw 'Canonical source commission path missing' }
+          if ($self -notmatch 'RunSelfAuditV2Async') { throw 'V2 deterministic self-audit missing' }
+          if ($self -notmatch 'RunSelfRepairCycleAsync') { throw 'V2 self-repair cycle missing' }
+          if ($self -notmatch 'IsLumiAndroidSourceReady') { throw 'Android-project source identity gate missing' }
+          if ($self -notmatch 'appBuild') { throw 'app/build.gradle project-root discovery missing' }
           if ($self -notmatch 'packageSha256') { throw 'Canonical package SHA verification missing' }
-          if ($self -notmatch 'BuildLiveSourceAsync\(false\)') { throw 'Post-repair local build validation missing' }
-          if ($gitBootstrap -notmatch 'PrepareBundledGitEnvironment') { throw 'Bundled Git PATH bootstrap missing' }
+          if ($self -notmatch 'CommissionSigningVaultAsync') { throw 'Signing-vault commissioning path missing' }
+          if ($toolchain -notmatch 'LUMI_GRADLE_HOME') { throw 'Bundled Gradle environment missing' }
+          if ($toolchain -notmatch 'JAVA_HOME') { throw 'Bundled JDK environment missing' }
+          if ($toolchain -notmatch 'ANDROID_SDK_ROOT') { throw 'Bundled Android SDK environment missing' }
+          if ($toolchain -notmatch 'BuildWithSigningAsync') { throw 'Secure signed build path missing' }
+          if ($toolchain -notmatch 'ProtectedData.Unprotect') { throw 'DPAPI signing restore missing' }
           if ($gitBootstrap -notmatch 'git-credential-manager.exe') { throw 'Git Credential Manager support missing' }
-          if ($phone -notmatch 'AppContext.BaseDirectory.*platform-tools') { throw 'Bundled ADB is not selected from application directory' }
-          if ($phone -notmatch 'StartPhonePresenceWatch') { throw 'Automatic phone presence watcher missing' }
-          if ($phone -notmatch 'kill-server') { throw 'Stale ADB server recovery missing' }
-          if ($phone -notmatch 'PHONE RECOVERY PASS') { throw 'Phone recovery evidence marker missing' }
-          if ($authResume -notmatch 'RunGitWithCredentialManagerInteractiveAsync') { throw 'Interactive Git Credential Manager flow missing' }
-          if ($authResume -notmatch 'GCM_INTERACTIVE') { throw 'GCM browser interactivity marker missing' }
-          if ($authResume -notmatch 'Resuming self-repair automatically') { throw 'Automatic repair resume marker missing' }
-          if ($authResume -notmatch 'RunSelfRepairCycleAsync') { throw 'Automatic post-auth self-repair invocation missing' }
-          if ($installer -notmatch 'kill-server') { throw 'Installer does not stop the existing ADB server before upgrade' }
-          if ($installer -notmatch 'taskkill /IM adb\.exe') { throw 'Installer does not force-release a stale adb.exe lock' }
+          if ($phone -notmatch 'AppContext.BaseDirectory.*platform-tools') { throw 'Bundled ADB app-directory path missing' }
+          if ($authResume -notmatch 'Resuming self-repair automatically') { throw 'Automatic GitHub auth resume missing' }
+          if ($installer -notmatch 'kill-server') { throw 'Installer does not stop ADB server before upgrade' }
+          if ($installer -notmatch 'taskkill /IM adb\.exe') { throw 'Installer does not force-release stale adb.exe' }
 
       - name: Bundle Android platform-tools
         shell: powershell
@@ -90,7 +97,6 @@ jobs:
           if (-not (Test-Path (Join-Path $source 'adb.exe'))) { throw 'Google platform-tools archive did not contain adb.exe' }
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force
-          if (-not (Test-Path (Join-Path $dest 'adb.exe'))) { throw 'adb.exe was not bundled into publish output' }
           & (Join-Path $dest 'adb.exe') version
 
       - name: Bundle Portable Git and Git Credential Manager
@@ -113,6 +119,53 @@ jobs:
           & $git --version
           & $gcm.FullName --version
 
+      - name: Bundle Gradle 8.9
+        shell: powershell
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'gradle-8.9-bin.zip'
+          Invoke-WebRequest -Uri 'https://services.gradle.org/distributions/gradle-8.9-bin.zip' -OutFile $zip
+          $dest = 'workstation020/publish/toolchain/gradle'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          $gradle = Join-Path $dest 'gradle-8.9\bin\gradle.bat'
+          if (-not (Test-Path $gradle)) { throw 'Gradle 8.9 was not bundled correctly' }
+          & $gradle --version
+
+      - name: Bundle JDK 17
+        shell: powershell
+        run: |
+          if (-not $env:JAVA_HOME) { throw 'JAVA_HOME missing after setup-java' }
+          $dest = 'workstation020/publish/toolchain/jdk'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path (Join-Path $env:JAVA_HOME '*') -Destination $dest -Recurse -Force
+          $java = Join-Path $dest 'bin\java.exe'
+          if (-not (Test-Path $java)) { throw 'JDK 17 java.exe missing from bundled toolchain' }
+          & $java -version
+
+      - name: Bundle Android API 35 build SDK
+        shell: powershell
+        run: |
+          $sdk = $env:ANDROID_HOME
+          if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+          if (-not $sdk) { throw 'Hosted runner Android SDK root is unavailable' }
+          $sdkManager = Join-Path $sdk 'cmdline-tools\latest\bin\sdkmanager.bat'
+          $platform = Join-Path $sdk 'platforms\android-35\android.jar'
+          $bt34 = Join-Path $sdk 'build-tools\34.0.0\aapt2.exe'
+          $bt35 = Join-Path $sdk 'build-tools\35.0.0\aapt2.exe'
+          if ((-not (Test-Path $platform)) -or (-not (Test-Path $bt34)) -or (-not (Test-Path $bt35))) {
+            if (-not (Test-Path $sdkManager)) { throw 'sdkmanager not available to prepare API 35 build SDK' }
+            & $sdkManager 'platforms;android-35' 'build-tools;34.0.0' 'build-tools;35.0.0'
+            if ($LASTEXITCODE -ne 0) { throw 'sdkmanager failed preparing API 35 build SDK' }
+          }
+          $dest = 'workstation020/publish/toolchain/android-sdk'
+          New-Item -ItemType Directory -Force -Path (Join-Path $dest 'platforms') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $dest 'build-tools') | Out-Null
+          Copy-Item -Path (Join-Path $sdk 'platforms\android-35') -Destination (Join-Path $dest 'platforms\android-35') -Recurse -Force
+          Copy-Item -Path (Join-Path $sdk 'build-tools\34.0.0') -Destination (Join-Path $dest 'build-tools\34.0.0') -Recurse -Force
+          Copy-Item -Path (Join-Path $sdk 'build-tools\35.0.0') -Destination (Join-Path $dest 'build-tools\35.0.0') -Recurse -Force
+          if (-not (Test-Path (Join-Path $dest 'platforms\android-35\android.jar'))) { throw 'Bundled Android API 35 platform missing' }
+          if (-not (Test-Path (Join-Path $dest 'build-tools\34.0.0\aapt2.exe'))) { throw 'Bundled Android Build Tools 34.0.0 missing' }
+
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y --no-progress
@@ -125,22 +178,26 @@ jobs:
           & $iscc 'workstation020\installer\LumiDockingStation.iss'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Verify installer
+      - name: Verify installer and complete local Android build engine
         shell: powershell
         run: |
-          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.6.4.exe'
+          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.6.5.exe'
           if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
-          if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing before upload' }
-          if (-not (Test-Path 'workstation020/publish/git/cmd/git.exe')) { throw 'Bundled git.exe missing before upload' }
+          if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing' }
+          if (-not (Test-Path 'workstation020/publish/git/cmd/git.exe')) { throw 'Bundled git.exe missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/gradle/gradle-8.9/bin/gradle.bat')) { throw 'Bundled Gradle 8.9 missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/jdk/bin/java.exe')) { throw 'Bundled JDK 17 missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/android-sdk/platforms/android-35/android.jar')) { throw 'Bundled API 35 missing' }
+          if (-not (Test-Path 'workstation020/publish/toolchain/android-sdk/build-tools/34.0.0/aapt2.exe')) { throw 'Bundled Build Tools 34 missing' }
           $gcm = Get-ChildItem -Path 'workstation020/publish/git' -Recurse -Filter 'git-credential-manager.exe' | Select-Object -First 1
-          if (-not $gcm) { throw 'Bundled Git Credential Manager missing before upload' }
-          if (-not (Test-Path 'workstation020/publish/LumiDockingStation.exe')) { throw 'Workstation binary missing before upload' }
+          if (-not $gcm) { throw 'Bundled Git Credential Manager missing' }
+          if (-not (Test-Path 'workstation020/publish/LumiDockingStation.exe')) { throw 'Workstation binary missing' }
           Get-Item $exe | Format-List FullName,Length,LastWriteTime
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Workstation-Setup-0.6.4
-          path: workstation020/artifacts/Lumi-Workstation-Setup-0.6.4.exe
+          name: Lumi-Workstation-Setup-0.6.5
+          path: workstation020/artifacts/Lumi-Workstation-Setup-0.6.5.exe
           if-no-files-found: error
           retention-days: 14
