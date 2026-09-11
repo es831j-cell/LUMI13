@@ -1,4 +1,4 @@
-name: Build Workstation 0.4.0
+name: Build Workstation 0.5.0
 
 on:
   push:
@@ -31,13 +31,21 @@ jobs:
       - name: Publish self-contained x64
         run: dotnet publish workstation020/LumiDockingStation.csproj -c Release -r win-x64 --self-contained true -o workstation020/publish
 
-      - name: Verify docking transfer source compiled
+      - name: Verify Lumi Windows runtime and docking source
         shell: powershell
         run: |
           if (-not (Test-Path 'workstation020/DockTransferUpgrade.cs')) { throw 'DockTransferUpgrade.cs missing from source' }
-          $text = Get-Content 'workstation020/DockTransferUpgrade.cs' -Raw
-          if ($text -notmatch 'DOCK PASS') { throw 'Dock transfer acceptance marker missing' }
-          if ($text -notmatch 'adb.*pull|pull.*adb') { throw 'No real ADB pull path found in docking source' }
+          if (-not (Test-Path 'workstation020/LumiDesktopRuntime.cs')) { throw 'LumiDesktopRuntime.cs missing from source' }
+          $dock = Get-Content 'workstation020/DockTransferUpgrade.cs' -Raw
+          $runtime = Get-Content 'workstation020/LumiDesktopRuntime.cs' -Raw
+          if ($dock -notmatch 'DOCK PASS') { throw 'Dock transfer acceptance marker missing' }
+          if ($dock -notmatch 'adb.*pull|pull.*adb') { throw 'No real ADB pull path found in docking source' }
+          if ($runtime -notmatch 'activeHost = "windows-workstation"') { throw 'Windows host ownership marker missing' }
+          if ($runtime -notmatch 'ExecuteLumiToolAsync') { throw 'Lumi tool executor missing' }
+          if ($runtime -notmatch 'workspace.write') { throw 'Workspace write tool missing' }
+          if ($runtime -notmatch 'lumi.build') { throw 'Build tool missing' }
+          if ($runtime -notmatch 'lumi.deploy') { throw 'Deploy tool missing' }
+          if ($runtime -notmatch 'AI providers are reasoning engines') { throw 'Lumi/provider role separation marker missing' }
 
       - name: Bundle Android platform-tools
         shell: powershell
@@ -69,7 +77,7 @@ jobs:
       - name: Verify installer
         shell: powershell
         run: |
-          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.4.0.exe'
+          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.5.0.exe'
           if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
           if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing before upload' }
           if (-not (Test-Path 'workstation020/publish/LumiDockingStation.exe')) { throw 'Workstation binary missing before upload' }
@@ -78,7 +86,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Workstation-Setup-0.4.0
-          path: workstation020/artifacts/Lumi-Workstation-Setup-0.4.0.exe
+          name: Lumi-Workstation-Setup-0.5.0
+          path: workstation020/artifacts/Lumi-Workstation-Setup-0.5.0.exe
           if-no-files-found: error
           retention-days: 14
