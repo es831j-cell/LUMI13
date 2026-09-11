@@ -1,0 +1,97 @@
+name: Split Workstation 0.6.5 Installer
+
+on:
+  push:
+    branches:
+      - workstation-020-build
+    paths:
+      - '.github/workflows/split-workstation-065.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  split-installer:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download verified 0.6.5 installer artifact
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path transport\input | Out-Null
+          gh run download 34556339620 --repo es831j-cell/LUMI13 --name Lumi-Workstation-Setup-0.6.5 --dir transport\input
+          $exe = Get-ChildItem transport\input -Filter '*.exe' -Recurse | Select-Object -First 1
+          if (-not $exe) { throw 'Verified 0.6.5 installer EXE was not downloaded.' }
+          Copy-Item $exe.FullName transport\Lumi-Workstation-Setup-0.6.5.exe -Force
+
+      - name: Split exact installer and write manifest
+        shell: powershell
+        run: |
+          $source = (Resolve-Path 'transport\Lumi-Workstation-Setup-0.6.5.exe').Path
+          $outDir = 'transport\parts'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $chunkSize = 300MB
+          $buffer = New-Object byte[] (4MB)
+          $input = [System.IO.File]::OpenRead($source)
+          try {
+            $index = 1
+            while ($input.Position -lt $input.Length) {
+              $part = Join-Path $outDir ('Lumi-Workstation-Setup-0.6.5.part{0:D3}.bin' -f $index)
+              $output = [System.IO.File]::Create($part)
+              try {
+                [long]$remaining = [Math]::Min([long]$chunkSize, $input.Length - $input.Position)
+                while ($remaining -gt 0) {
+                  $wanted = [int][Math]::Min([long]$buffer.Length, $remaining)
+                  $read = $input.Read($buffer, 0, $wanted)
+                  if ($read -le 0) { throw 'Unexpected end of installer while splitting.' }
+                  $output.Write($buffer, 0, $read)
+                  $remaining -= $read
+                }
+              } finally { $output.Dispose() }
+              $index++
+            }
+          } finally { $input.Dispose() }
+          $parts = Get-ChildItem $outDir -Filter '*.bin' | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Expected exactly 2 transport chunks; got $($parts.Count)." }
+          $hash = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
+          $length = (Get-Item $source).Length
+          @(
+            "filename=Lumi-Workstation-Setup-0.6.5.exe"
+            "length=$length"
+            "sha256=$hash"
+            "part1=$($parts[0].Name):$($parts[0].Length)"
+            "part2=$($parts[1].Name):$($parts[1].Length)"
+            "source_run=34556339620"
+            "source_artifact=10182900754"
+          ) | Set-Content -Encoding ascii transport\manifest.txt
+          Get-Content transport\manifest.txt
+
+      - name: Upload part 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumi-Workstation-Setup-0.6.5-part1
+          path: transport/parts/Lumi-Workstation-Setup-0.6.5.part001.bin
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumi-Workstation-Setup-0.6.5-part2
+          path: transport/parts/Lumi-Workstation-Setup-0.6.5.part002.bin
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload verification manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumi-Workstation-Setup-0.6.5-manifest
+          path: transport/manifest.txt
+          if-no-files-found: error
+          retention-days: 14
