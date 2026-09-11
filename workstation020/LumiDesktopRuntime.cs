@@ -3,12 +3,14 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace Lumi.DockingStation;
 
 public partial class MainWindow
 {
+    private static readonly bool RuntimeClassHook = RegisterRuntimeClassHook();
     private bool _lumiDesktopRuntimeReady;
     private string _runtimeSessionId = Guid.NewGuid().ToString("N");
     private string RuntimeRoot => Path.Combine(WorkstationRoot, "Runtime");
@@ -32,6 +34,22 @@ public partial class MainWindow
         "git.log"
     };
 
+    private static bool RegisterRuntimeClassHook()
+    {
+        EventManager.RegisterClassHandler(
+            typeof(MainWindow),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(MainWindow_RuntimeLoaded),
+            true);
+        return true;
+    }
+
+    private static void MainWindow_RuntimeLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is MainWindow window)
+            window.InitializeLumiDesktopRuntime();
+    }
+
     private void InitializeLumiDesktopRuntime()
     {
         if (_lumiDesktopRuntimeReady) return;
@@ -52,10 +70,55 @@ public partial class MainWindow
         File.WriteAllText(Path.Combine(RuntimeRoot, "runtime-state.json"),
             JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
 
+        CommandInputBox.PreviewKeyDown += LumiRuntime_PreviewKeyDown;
+        SendCommandButton.PreviewMouseLeftButtonDown += LumiRuntime_PreviewMouseDown;
         AddRuntimeStatusToDashboard();
         WriteRuntimeLedger("runtime.start", new { host = "windows-workstation", tools = LumiDesktopTools.Length });
         AppendCommand($"LUMI > Desktop Runtime ACTIVE on this workstation. {LumiDesktopTools.Length} local tools registered.");
         AppendDiagnostic($"Lumi Desktop Runtime active. session={_runtimeSessionId}; tools={string.Join(",", LumiDesktopTools)}");
+    }
+
+    private async void LumiRuntime_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || (Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
+        if (!ShouldLumiRuntimeOwnPrompt(CommandInputBox.Text)) return;
+        e.Handled = true;
+        await RoutePromptThroughLumiRuntimeAsync();
+    }
+
+    private async void LumiRuntime_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!ShouldLumiRuntimeOwnPrompt(CommandInputBox.Text)) return;
+        e.Handled = true;
+        await RoutePromptThroughLumiRuntimeAsync();
+    }
+
+    private bool ShouldLumiRuntimeOwnPrompt(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        if (IsDockTransferCommand(raw)) return false;
+        if (IsLocalWorkstationCommand(raw)) return false;
+        return true;
+    }
+
+    private async Task RoutePromptThroughLumiRuntimeAsync()
+    {
+        var instruction = CommandInputBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(instruction)) return;
+
+        var provider = ChooseProviderForPrompt();
+        if (provider is null)
+        {
+            CommandInputBox.Clear();
+            AppendCommand($"YOU > {instruction}");
+            AppendCommand("LUMI > My Windows runtime is active, but I do not have an enabled reasoning provider yet. Add or enable one in AI Vault. My local workstation commands still work without an AI key.");
+            SaveInstruction(instruction, "LUMI_RUNTIME_NO_PROVIDER");
+            WriteRuntimeLedger("instruction.blocked", new { instruction, reason = "no-enabled-reasoning-provider" });
+            StatusText.Text = "Lumi runtime active · reasoning provider needed";
+            return;
+        }
+
+        await ExecuteLumiDesktopPromptAsync(provider, instruction);
     }
 
     private void AddRuntimeStatusToDashboard()
