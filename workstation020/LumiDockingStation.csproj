@@ -11,11 +11,12 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <Version>0.6.4</Version>
+    <Version>0.6.5</Version>
     <Product>Lumi Workstation</Product>
     <Company>Distressed Elk Acres</Company>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="SelfEvaluationUpgrade.cs" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 </Project>
