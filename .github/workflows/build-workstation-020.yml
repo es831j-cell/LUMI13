@@ -1,4 +1,4 @@
-name: Build Workstation 0.6.3
+name: Build Workstation 0.6.4
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
       - name: Publish self-contained x64
         run: dotnet publish workstation020/LumiDockingStation.csproj -c Release -r win-x64 --self-contained true -o workstation020/publish
 
-      - name: Verify Lumi core self-repair phone recovery Git bootstrap and auth resume
+      - name: Verify Lumi core self-repair phone recovery Git bootstrap auth resume and safe upgrade
         shell: powershell
         run: |
           $required = @(
@@ -41,7 +41,8 @@ jobs:
             'workstation020/SelfEvaluationUpgrade.cs',
             'workstation020/BundledGitUpgrade.cs',
             'workstation020/PhoneDetectionUpgrade.cs',
-            'workstation020/GitHubRepairResumeUpgrade.cs'
+            'workstation020/GitHubRepairResumeUpgrade.cs',
+            'workstation020/installer/LumiDockingStation.iss'
           )
           foreach ($file in $required) { if (-not (Test-Path $file)) { throw "Missing required source: $file" } }
           $dock = Get-Content 'workstation020/DockTransferUpgrade.cs' -Raw
@@ -51,6 +52,7 @@ jobs:
           $gitBootstrap = Get-Content 'workstation020/BundledGitUpgrade.cs' -Raw
           $phone = Get-Content 'workstation020/PhoneDetectionUpgrade.cs' -Raw
           $authResume = Get-Content 'workstation020/GitHubRepairResumeUpgrade.cs' -Raw
+          $installer = Get-Content 'workstation020/installer/LumiDockingStation.iss' -Raw
           if ($dock -notmatch 'DOCK PASS') { throw 'Dock transfer acceptance marker missing' }
           if ($dock -notmatch 'adb.*pull|pull.*adb') { throw 'No real ADB pull path found in docking source' }
           if ($runtime -notmatch 'activeHost = "windows-workstation"') { throw 'Windows host ownership marker missing' }
@@ -73,6 +75,8 @@ jobs:
           if ($authResume -notmatch 'GCM_INTERACTIVE') { throw 'GCM browser interactivity marker missing' }
           if ($authResume -notmatch 'Resuming self-repair automatically') { throw 'Automatic repair resume marker missing' }
           if ($authResume -notmatch 'RunSelfRepairCycleAsync') { throw 'Automatic post-auth self-repair invocation missing' }
+          if ($installer -notmatch 'kill-server') { throw 'Installer does not stop the existing ADB server before upgrade' }
+          if ($installer -notmatch 'taskkill /IM adb\.exe') { throw 'Installer does not force-release a stale adb.exe lock' }
 
       - name: Bundle Android platform-tools
         shell: powershell
@@ -124,7 +128,7 @@ jobs:
       - name: Verify installer
         shell: powershell
         run: |
-          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.6.3.exe'
+          $exe = 'workstation020/artifacts/Lumi-Workstation-Setup-0.6.4.exe'
           if (-not (Test-Path $exe)) { throw "Installer missing: $exe" }
           if (-not (Test-Path 'workstation020/publish/platform-tools/adb.exe')) { throw 'Bundled adb.exe missing before upload' }
           if (-not (Test-Path 'workstation020/publish/git/cmd/git.exe')) { throw 'Bundled git.exe missing before upload' }
@@ -136,7 +140,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Workstation-Setup-0.6.3
-          path: workstation020/artifacts/Lumi-Workstation-Setup-0.6.3.exe
+          name: Lumi-Workstation-Setup-0.6.4
+          path: workstation020/artifacts/Lumi-Workstation-Setup-0.6.4.exe
           if-no-files-found: error
           retention-days: 14
