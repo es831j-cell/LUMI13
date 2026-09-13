@@ -1,0 +1,36 @@
+name: Import Lumi Public Update Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-temp.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code703 package into public distribution lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprsouthcentralus.oaiusercontent.com/files/00000000-1420-81f7-b1ad-fe06cc4105aa/raw?se=2026-09-13T15%3A50%3A32Z&sp=r&sv=2026-02-06&sr=b&scid=cd2bb6d6-b493-527a-b439-df4a658d8fd6&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T11%3A05%3A45Z&ske=2026-09-14T11%3A05%3A45Z&sks=b&skv=2026-02-06&sig=cBzHwKikTIG%2B0Cwy4kHW1dFtuLdhukbpAbV/EXI/FwQ%3D' -o /tmp/artifact.zip
+          unzip -q /tmp/artifact.zip -d /tmp/artifact
+          PKG=$(find /tmp/artifact -type f -name 'Lumi-Code703-Manual-Update-Check-R413.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code703-Manual-Update-Check-R413.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code703-Manual-Update-Check-R413.zip | awk '{print $1}')
+          test "$ACTUAL" = '3d1fe08587e534f649fae21b8ad873fdf85acfc0f830f3cee5baa8245ddbf434'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code703-manual-update-check-r413","baseVersionCode":702,"targetVersionCode":703,"targetVersionName":"5.0.43-manual-update-check-r413","packageFile":"Lumi-Code703-Manual-Update-Check-R413.zip","packageSha256":"3d1fe08587e534f649fae21b8ad873fdf85acfc0f830f3cee5baa8245ddbf434","releaseNotes":"Visible Check for Updates button forces fresh release discovery. Package remains Lumi-signed and Android approval remains mandatory."}
+          JSON
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Seed public signed update channel with Code703'
+          git push
