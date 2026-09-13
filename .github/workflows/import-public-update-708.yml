@@ -1,0 +1,57 @@
+name: Import Lumi Code708 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-708.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code708 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-708c-81f5-bc8e-1aaea4fee224/raw?se=2026-09-13T20%3A29%3A13Z&sp=r&sv=2026-02-06&sr=b&scid=3d454fb7-c51f-5247-a779-596fed8b4196&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T01%3A52%3A44Z&ske=2026-09-14T01%3A52%3A44Z&sks=b&skv=2026-02-06&sig=I%2BwSADgQ1ks4GntTgqwVWtS4MKtDOSREDIdLrr3nxtA%3D' -o /tmp/code708-artifact.zip
+          test "$(sha256sum /tmp/code708-artifact.zip | awk '{print $1}')" = '94c81496b71e003ce4c0190be89d15731c83f7c240dc55a9789dd2dd15b16162'
+          rm -rf /tmp/code708-artifact && mkdir -p /tmp/code708-artifact
+          unzip -q /tmp/code708-artifact.zip -d /tmp/code708-artifact
+          PKG=$(find /tmp/code708-artifact -type f -name 'Lumi-Code708-Lumi1-RC-Hardening-R418.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code708-Lumi1-RC-Hardening-R418.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code708-Lumi1-RC-Hardening-R418.zip | awk '{print $1}')
+          test "$ACTUAL" = 'a91aaf8e0e1da2df8eb34774aba0218784dc35baa0ee99010de9cd82a7588468'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code708-lumi1-rc-hardening-r418","baseVersionCode":707,"minBaseVersionCode":707,"maxBaseVersionCode":707,"targetVersionCode":708,"targetVersionName":"5.0.48-lumi1-rc-hardening-r418","packageFile":"Lumi-Code708-Lumi1-RC-Hardening-R418.zip","packageSha256":"a91aaf8e0e1da2df8eb34774aba0218784dc35baa0ee99010de9cd82a7588468","releaseNotes":"Lumi 1.0 RC hardening fixes device-local date routing, web-answer relevance, real human barge-in acoustic yield, fresh update discovery, and stale cached update UI. Existing Lumi Core authority, provider vault, canonical-source validation, and Android installer approval remain mandatory."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=708]
+          updates.append({
+            "updateId":"code708-lumi1-rc-hardening-r418",
+            "baseVersionCode":707,"minBaseVersionCode":707,"maxBaseVersionCode":707,
+            "targetVersionCode":708,"targetVersionName":"5.0.48-lumi1-rc-hardening-r418",
+            "packageFile":"Lumi-Code708-Lumi1-RC-Hardening-R418.zip",
+            "packageSha256":"a91aaf8e0e1da2df8eb34774aba0218784dc35baa0ee99010de9cd82a7588468",
+            "releaseNotes":"Lumi 1.0 RC hardening: local date truth, web relevance, human barge-in yield, fresh update discovery, stale-cache suppression."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code708 Lumi 1.0 RC hardening on public signed update channel'
+          git push
