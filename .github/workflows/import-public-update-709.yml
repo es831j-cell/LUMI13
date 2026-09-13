@@ -1,0 +1,57 @@
+name: Import Lumi Code709 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-709.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code709 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntpreastus2.oaiusercontent.com/files/00000000-c5d0-81f6-afeb-206bf3252e6b/raw?se=2026-09-13T20%3A41%3A01Z&sp=r&sv=2026-02-06&sr=b&scid=c43dd60c-d0f6-55d3-bccd-2cd1c772ca92&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T15%3A48%3A52Z&ske=2026-09-14T15%3A48%3A52Z&sks=b&skv=2026-02-06&sig=4cumG2ri%2BJ/Ffob4uuYIAk4IIAE/ujYRnipNGqNjWWY%3D' -o /tmp/code709-artifact.zip
+          test "$(sha256sum /tmp/code709-artifact.zip | awk '{print $1}')" = 'ee2abfea0f8cf20f3a7ab9ec7139bee435d058df005e46793a2f7779a527cd6f'
+          rm -rf /tmp/code709-artifact && mkdir -p /tmp/code709-artifact
+          unzip -q /tmp/code709-artifact.zip -d /tmp/code709-artifact
+          PKG=$(find /tmp/code709-artifact -type f -name 'Lumi-Code709-Core-Authority-Convergence-R419.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code709-Core-Authority-Convergence-R419.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code709-Core-Authority-Convergence-R419.zip | awk '{print $1}')
+          test "$ACTUAL" = 'e9ffec2aeb4ad24e42685952c575f086959c699f89f85f9e4acaec250afd42c8'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code709-core-authority-convergence-r419","baseVersionCode":708,"minBaseVersionCode":708,"maxBaseVersionCode":708,"targetVersionCode":709,"targetVersionName":"5.0.49-core-authority-convergence-r419","packageFile":"Lumi-Code709-Core-Authority-Convergence-R419.zip","packageSha256":"e9ffec2aeb4ad24e42685952c575f086959c699f89f85f9e4acaec250afd42c8","releaseNotes":"Owner-granted runtime authority converges on Lumi Core. Routers, providers, web/search, local executors, diagnostics, maintenance, and update helpers are delegates only; evidence returns to Lumi Core for final commit. Code708 hardening and Android security boundaries remain intact."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=709]
+          updates.append({
+            "updateId":"code709-core-authority-convergence-r419",
+            "baseVersionCode":708,"minBaseVersionCode":708,"maxBaseVersionCode":708,
+            "targetVersionCode":709,"targetVersionName":"5.0.49-core-authority-convergence-r419",
+            "packageFile":"Lumi-Code709-Core-Authority-Convergence-R419.zip",
+            "packageSha256":"e9ffec2aeb4ad24e42685952c575f086959c699f89f85f9e4acaec250afd42c8",
+            "releaseNotes":"Core authority convergence: owner-granted runtime authority belongs to Lumi Core; delegates return evidence for final commit; Code708 hardening preserved."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code709 core authority convergence on public signed update channel'
+          git push
