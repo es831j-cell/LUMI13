@@ -1,0 +1,57 @@
+name: Import Lumi Code711 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-711.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code711 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntpreastus2.oaiusercontent.com/files/00000000-5cdc-81f6-9d49-dd01a85edfac/raw?se=2026-09-13T21%3A47%3A16Z&sp=r&sv=2026-02-06&sr=b&scid=b1bd3430-3113-5b0f-88ce-d7d31a5e0e73&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T02%3A28%3A20Z&ske=2026-09-14T02%3A28%3A20Z&sks=b&skv=2026-02-06&sig=hcCb6o7h1ioW%2Bop5UrpbrA%2BDZhh4l9IGLEVvxJTosmg%3D' -o /tmp/code711-artifact.zip
+          test "$(sha256sum /tmp/code711-artifact.zip | awk '{print $1}')" = '7409c7812528d6a1c9f8356d22dbdc5b16b8a089f87d56ef9bb82c507c1a26b9'
+          rm -rf /tmp/code711-artifact && mkdir -p /tmp/code711-artifact
+          unzip -q /tmp/code711-artifact.zip -d /tmp/code711-artifact
+          PKG=$(find /tmp/code711-artifact -type f -name 'Lumi-Code711-Avatar-Scene-Foundation-R421.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code711-Avatar-Scene-Foundation-R421.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code711-Avatar-Scene-Foundation-R421.zip | awk '{print $1}')
+          test "$ACTUAL" = 'd6bdd80d16e59e4cd89cd692e6582b80603abda25836cc11f276c4a4fe25c3d6'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code711-avatar-scene-foundation-r421","baseVersionCode":710,"minBaseVersionCode":710,"maxBaseVersionCode":710,"targetVersionCode":711,"targetVersionName":"5.0.51-avatar-scene-foundation-r421","packageFile":"Lumi-Code711-Avatar-Scene-Foundation-R421.zip","packageSha256":"d6bdd80d16e59e4cd89cd692e6582b80603abda25836cc11f276c4a4fe25c3d6","releaseNotes":"Avatar scene foundation: one production scene root owns the mounted visual model; inherited red/purple tuning is purged and blocked; the pyramid is now a swappable model slot for the future humanoid. Code710 hardening and Code709 Lumi Core authority are preserved."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=711]
+          updates.append({
+            "updateId":"code711-avatar-scene-foundation-r421",
+            "baseVersionCode":710,"minBaseVersionCode":710,"maxBaseVersionCode":710,
+            "targetVersionCode":711,"targetVersionName":"5.0.51-avatar-scene-foundation-r421",
+            "packageFile":"Lumi-Code711-Avatar-Scene-Foundation-R421.zip",
+            "packageSha256":"d6bdd80d16e59e4cd89cd692e6582b80603abda25836cc11f276c4a4fe25c3d6",
+            "releaseNotes":"One visual scene authority, legacy red tuning blocked, pyramid moved into swappable model slot for future humanoid avatar."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code711 avatar scene foundation on public signed update channel'
+          git push
