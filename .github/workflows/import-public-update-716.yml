@@ -1,0 +1,57 @@
+name: Import Lumi Code716 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-716.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code716 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprsoutheastus3.oaiusercontent.com/files/00000000-027c-820c-b84f-7533b3ea89f5/raw?se=2026-09-14T02%3A29%3A28Z&sp=r&sv=2026-02-06&sr=b&scid=14bb3f43-e997-52e8-93d8-5ed378bb7343&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T05%3A59%3A58Z&ske=2026-09-14T05%3A59%3A58Z&sks=b&skv=2026-02-06&sig=bJhQvunyjJh4y%2Bdeka75t8XxST0yo9wreQgOwifYTEM%3D' -o /tmp/code716-artifact.zip
+          test "$(sha256sum /tmp/code716-artifact.zip | awk '{print $1}')" = '8dc4d9330fe98f00bd1559030554495e4416dbe7b57a7013f36b500eb52d3c38'
+          rm -rf /tmp/code716-artifact && mkdir -p /tmp/code716-artifact
+          unzip -q /tmp/code716-artifact.zip -d /tmp/code716-artifact
+          PKG=$(find /tmp/code716-artifact -type f -name 'Lumi-Code716-Fast-Brain-Recovery-R426.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code716-Fast-Brain-Recovery-R426.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code716-Fast-Brain-Recovery-R426.zip | awk '{print $1}')
+          test "$ACTUAL" = 'd8e563b1932027a50c4f93ff2b899afd82cc79d4df50c909146fb9841bc76da3'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code716-fast-brain-recovery-r426","baseVersionCode":715,"minBaseVersionCode":715,"maxBaseVersionCode":715,"targetVersionCode":716,"targetVersionName":"5.0.56-fast-brain-recovery-r426","packageFile":"Lumi-Code716-Fast-Brain-Recovery-R426.zip","packageSha256":"d8e563b1932027a50c4f93ff2b899afd82cc79d4df50c909146fb9841bc76da3","releaseNotes":"Fast Brain self-repair execution hotfix. Historical worker exits cannot clear current Lumi generation state; genuine worker death returns evidence to the active task; stale visual self-design recovers automatically."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=716]
+          updates.append({
+            "updateId":"code716-fast-brain-recovery-r426",
+            "baseVersionCode":715,"minBaseVersionCode":715,"maxBaseVersionCode":715,
+            "targetVersionCode":716,"targetVersionName":"5.0.56-fast-brain-recovery-r426",
+            "packageFile":"Lumi-Code716-Fast-Brain-Recovery-R426.zip",
+            "packageSha256":"d8e563b1932027a50c4f93ff2b899afd82cc79d4df50c909146fb9841bc76da3",
+            "releaseNotes":"Fast Brain recovery: ignore pre-process exit history, preserve active request callbacks on genuine worker death, and automatically recover stale Lumi self-design generation."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code716 Fast Brain Recovery on public signed update channel'
+          git push
