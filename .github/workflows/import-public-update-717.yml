@@ -1,0 +1,57 @@
+name: Import Lumi Code717 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-717.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code717 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntpreastus.oaiusercontent.com/files/00000000-f890-81f9-b7b0-508c8f62cfe8/raw?se=2026-09-14T03%3A23%3A57Z&sp=r&sv=2026-02-06&sr=b&scid=6866a804-4e15-5d24-a318-58b107fb2342&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T21%3A52%3A22Z&ske=2026-09-14T21%3A52%3A22Z&sks=b&skv=2026-02-06&sig=k8hIbkzft3IiSITlpU5WNzZtUMQzDWfQz4YZHSZK5rE%3D' -o /tmp/code717-artifact.zip
+          test "$(sha256sum /tmp/code717-artifact.zip | awk '{print $1}')" = 'c8f1272e38db2a49a6f0931861f55b9530d1007d22e42b363ce809a0f1e7e6af'
+          rm -rf /tmp/code717-artifact && mkdir -p /tmp/code717-artifact
+          unzip -q /tmp/code717-artifact.zip -d /tmp/code717-artifact
+          PKG=$(find /tmp/code717-artifact -type f -name 'Lumi-Code717-Visual-Restore-R427.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code717-Visual-Restore-R427.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code717-Visual-Restore-R427.zip | awk '{print $1}')
+          test "$ACTUAL" = 'c106e1dae0667f820f96e60e7224b2a71450519d9ee3ab211a4ce107f708886f'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code717-visual-restore-r427","baseVersionCode":716,"minBaseVersionCode":716,"maxBaseVersionCode":716,"targetVersionCode":717,"targetVersionName":"5.0.57-visual-restore-r427","packageFile":"Lumi-Code717-Visual-Restore-R427.zip","packageSha256":"c106e1dae0667f820f96e60e7224b2a71450519d9ee3ab211a4ce107f708886f","releaseNotes":"Restores Lumi's live owner-approved PBR pyramid and fixes the self-repair policy that removed her visual."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=717]
+          updates.append({
+            "updateId":"code717-visual-restore-r427",
+            "baseVersionCode":716,"minBaseVersionCode":716,"maxBaseVersionCode":716,
+            "targetVersionCode":717,"targetVersionName":"5.0.57-visual-restore-r427",
+            "packageFile":"Lumi-Code717-Visual-Restore-R427.zip",
+            "packageSha256":"c106e1dae0667f820f96e60e7224b2a71450519d9ee3ab211a4ce107f708886f",
+            "releaseNotes":"Visual restore: return Lumi's owner-approved live PBR pyramid and stop the recovery policy from suppressing it."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code717 Visual Restore on public signed update channel'
+          git push
