@@ -24,9 +24,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Prepare Android SDK 35
+        shell: bash
+        run: |
+          set -e
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Compile Lumi app
         run: gradle :app:compileDebugJavaWithJavac --stacktrace
