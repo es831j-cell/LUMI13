@@ -1,0 +1,60 @@
+name: Import Lumi Code721 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-721.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-code721-intent-convergence-r431
+  cancel-in-progress: true
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import exact signed Code721 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprnorthcentralus.oaiusercontent.com/files/00000000-9564-822f-b860-130bf7246708/raw?se=2026-09-14T13%3A23%3A41Z&sp=r&sv=2026-02-06&sr=b&scid=4e5dbdb9-bbfe-5d92-9090-230032787dc7&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T19%3A34%3A51Z&ske=2026-09-14T19%3A34%3A51Z&sks=b&skv=2026-02-06&sig=7Ahwgjp0dqV%2BUHRbLqK0KmUzr9Wf/gwgAAaELuKiv7k%3D' -o /tmp/code721-artifact.zip
+          test "$(sha256sum /tmp/code721-artifact.zip | awk '{print $1}')" = '2c835924127031ba0a12fc110e3754fb03c232caba2764751b3606ed5759722d'
+          rm -rf /tmp/code721-artifact && mkdir -p /tmp/code721-artifact
+          unzip -q /tmp/code721-artifact.zip -d /tmp/code721-artifact
+          PKG=$(find /tmp/code721-artifact -type f -name 'Lumi-Code721-Intent-Convergence-R431.zip' | head -n 1)
+          test -n "$PKG"
+          test "$(sha256sum "$PKG" | awk '{print $1}')" = '8c292c4993a20bb792f6aa7b22f2b8f7fb7351c82a3de65a092791c97b6e2d50'
+          cp "$PKG" .lumi/public-updates/Lumi-Code721-Intent-Convergence-R431.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code721-intent-convergence-r431","baseVersionCode":720,"minBaseVersionCode":720,"maxBaseVersionCode":720,"targetVersionCode":721,"targetVersionName":"5.0.61-intent-convergence-r431","packageFile":"Lumi-Code721-Intent-Convergence-R431.zip","packageSha256":"8c292c4993a20bb792f6aa7b22f2b8f7fb7351c82a3de65a092791c97b6e2d50","releaseNotes":"Intent convergence: self visual compare, contextual diagnostics, fresh visual measurement with retries, Core/causal execution truth alignment, and preservation of the Code720 installer handoff recovery for the 720→721 verification transition."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text()) if p.exists() else {"format":"LumiPublicUpdateIndex","formatVersion":1,"updates":[]}
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=721]
+          updates.append({
+            "updateId":"code721-intent-convergence-r431",
+            "baseVersionCode":720,"minBaseVersionCode":720,"maxBaseVersionCode":720,
+            "targetVersionCode":721,"targetVersionName":"5.0.61-intent-convergence-r431",
+            "packageFile":"Lumi-Code721-Intent-Convergence-R431.zip",
+            "packageSha256":"8c292c4993a20bb792f6aa7b22f2b8f7fb7351c82a3de65a092791c97b6e2d50",
+            "releaseNotes":"Intent convergence and self-observation repair with fresh visual measurement and Core truth alignment."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code721 Intent Convergence on public signed update channel'
+          git push
