@@ -1,0 +1,57 @@
+name: Import Lumi Code715 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-715.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code715 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-01d0-81f5-b414-34c782992d2f/raw?se=2026-09-14T01%3A58%3A05Z&sp=r&sv=2026-02-06&sr=b&scid=5774988a-2f3f-5f08-9f6c-0b0e6d564769&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T01%3A31%3A02Z&ske=2026-09-15T01%3A31%3A02Z&sks=b&skv=2026-02-06&sig=zoVYBYW%2B3dE8V38jR7uXy2qVpIxyuBST8a744flpEe8%3D' -o /tmp/code715-artifact.zip
+          test "$(sha256sum /tmp/code715-artifact.zip | awk '{print $1}')" = 'beb6498af3ca6410a824f3f1c391347c0b2da1925cc27fc002a290b36df7487d'
+          rm -rf /tmp/code715-artifact && mkdir -p /tmp/code715-artifact
+          unzip -q /tmp/code715-artifact.zip -d /tmp/code715-artifact
+          PKG=$(find /tmp/code715-artifact -type f -name 'Lumi-Code715-Visual-Clean-Slate-R425.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code715-Visual-Clean-Slate-R425.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code715-Visual-Clean-Slate-R425.zip | awk '{print $1}')
+          test "$ACTUAL" = 'cdab964097dc2e4a974208b470e2ed243a0a482b79cd2e368061273c5f31ec4e'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code715-visual-clean-slate-r425","baseVersionCode":714,"minBaseVersionCode":714,"maxBaseVersionCode":714,"targetVersionCode":715,"targetVersionName":"5.0.55-visual-clean-slate-r425","packageFile":"Lumi-Code715-Visual-Clean-Slate-R425.zip","packageSha256":"cdab964097dc2e4a974208b470e2ed243a0a482b79cd2e368061273c5f31ec4e","releaseNotes":"Owner-directed visual clean slate. Legacy Home avatar/button composition is suppressed; Lumi Core owns a validated runtime visual/button workspace and local Fast Brain authors the replacement visuals/buttons herself."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=715]
+          updates.append({
+            "updateId":"code715-visual-clean-slate-r425",
+            "baseVersionCode":714,"minBaseVersionCode":714,"maxBaseVersionCode":714,
+            "targetVersionCode":715,"targetVersionName":"5.0.55-visual-clean-slate-r425",
+            "packageFile":"Lumi-Code715-Visual-Clean-Slate-R425.zip",
+            "packageSha256":"cdab964097dc2e4a974208b470e2ed243a0a482b79cd2e368061273c5f31ec4e",
+            "releaseNotes":"Visual clean slate: Lumi Core runtime visual/button workspace, local self-design loop, legacy Home PBR suppressed until clean evidence."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code715 Visual Clean Slate on public signed update channel'
+          git push
