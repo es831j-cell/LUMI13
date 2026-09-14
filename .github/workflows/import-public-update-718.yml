@@ -1,0 +1,57 @@
+name: Import Lumi Code718 Public Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-public-update-718.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import signed Code718 package and update sequential index
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          curl -fL 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-a64c-81f5-8b12-1f69616e2030/raw?se=2026-09-14T03%3A45%3A19Z&sp=r&sv=2026-02-06&sr=b&scid=783e94fb-40ab-51fa-aab9-e0903a13a84f&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-13T13%3A02%3A11Z&ske=2026-09-14T13%3A02%3A11Z&sks=b&skv=2026-02-06&sig=EyNtzxEv%2B60sxgPSLidJJJ7kbRwdkpCpgwIMJuKut3A%3D' -o /tmp/code718-artifact.zip
+          test "$(sha256sum /tmp/code718-artifact.zip | awk '{print $1}')" = 'ff5a5df67b5e0c3931e037b8e7f241af09bcb37de5bd82d16a8fb2a94584aca7'
+          rm -rf /tmp/code718-artifact && mkdir -p /tmp/code718-artifact
+          unzip -q /tmp/code718-artifact.zip -d /tmp/code718-artifact
+          PKG=$(find /tmp/code718-artifact -type f -name 'Lumi-Code718-Nightly-Recovery-R428.zip' | head -n 1)
+          test -n "$PKG"
+          cp "$PKG" .lumi/public-updates/Lumi-Code718-Nightly-Recovery-R428.zip
+          ACTUAL=$(sha256sum .lumi/public-updates/Lumi-Code718-Nightly-Recovery-R428.zip | awk '{print $1}')
+          test "$ACTUAL" = 'da9bf3baa28fccc385419c6305f094a8c7bed71a8beae98915d658d0c6daa14e'
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code718-nightly-recovery-r428","baseVersionCode":717,"minBaseVersionCode":717,"maxBaseVersionCode":717,"targetVersionCode":718,"targetVersionName":"5.0.58-nightly-recovery-r428","packageFile":"Lumi-Code718-Nightly-Recovery-R428.zip","packageSha256":"da9bf3baa28fccc385419c6305f094a8c7bed71a8beae98915d658d0c6daa14e","releaseNotes":"Nightly recovery: quarantines the corrupted Filament visual surface, promotes Lumi's stable procedural pyramid, and moves self-update installation to PackageInstaller.Session with Android approval evidence."}
+          JSON
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.lumi/public-updates/index.json')
+          data=json.loads(p.read_text())
+          updates=[u for u in data.setdefault('updates',[]) if int(u.get('targetVersionCode',-1))!=718]
+          updates.append({
+            "updateId":"code718-nightly-recovery-r428",
+            "baseVersionCode":717,"minBaseVersionCode":717,"maxBaseVersionCode":717,
+            "targetVersionCode":718,"targetVersionName":"5.0.58-nightly-recovery-r428",
+            "packageFile":"Lumi-Code718-Nightly-Recovery-R428.zip",
+            "packageSha256":"da9bf3baa28fccc385419c6305f094a8c7bed71a8beae98915d658d0c6daa14e",
+            "releaseNotes":"Nightly recovery: stable procedural visual primary and PackageInstaller.Session update handoff with explicit Android approval evidence."
+          })
+          updates.sort(key=lambda u:int(u.get('targetVersionCode',-1)))
+          data['updates']=updates
+          p.write_text(json.dumps(data,separators=(',',':'))+'\n')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates
+          git commit -m 'Publish Code718 Nightly Recovery on public signed update channel'
+          git push
