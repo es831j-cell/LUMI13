@@ -12,6 +12,9 @@ jobs:
   compile:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout feature source
         uses: actions/checkout@v4
@@ -27,8 +30,10 @@ jobs:
       - name: Prepare Android SDK 35
         shell: bash
         run: |
-          set -e
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Compile Lumi app
         run: gradle :app:compileDebugJavaWithJavac --stacktrace
