@@ -1,0 +1,48 @@
+name: Import Code735 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code735-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Download verified Code735 export
+        env:
+          EXPORT_URL: 'https://sdmntprwestus3.oaiusercontent.com/files/00000000-cdf4-81fd-8a6b-af84e89c9e24/raw?se=2026-09-14T22%3A53%3A04Z&sp=r&sv=2026-02-06&sr=b&scid=21da278e-e7fc-5f2b-b783-8991ded68058&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T19%3A01%3A03Z&ske=2026-09-15T19%3A01%3A03Z&sks=b&skv=2026-02-06&sig=Q/wxeLtT7RNy6p9ok5wA4I/0ETaSyGzCzT8fqj1PAAc%3D'
+        run: |
+          set -euo pipefail
+          curl --fail --location "$EXPORT_URL" -o /tmp/code735-export.zip
+          echo "d86e66428e22843988bd9772d484c91136a01090b0ea672d25b040f9ad258c30  /tmp/code735-export.zip" | sha256sum -c -
+          unzip -q /tmp/code735-export.zip -d /tmp/code735
+      - name: Verify and publish Code735 package
+        run: |
+          set -euo pipefail
+          PKG=/tmp/code735/Lumi-Code735-Dependency-Visual-Closure-R445.zip
+          test -f "$PKG"
+          echo "98f49910c1174a7a83219b5da06e0c624a5939e826a838f194a2c851efc621d7  $PKG" | sha256sum -c -
+          unzip -t "$PKG" >/dev/null
+          mkdir -p .lumi/public-updates
+          cp "$PKG" .lumi/public-updates/Lumi-Code735-Dependency-Visual-Closure-R445.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code735-dependency-visual-closure-r445","baseVersionCode":734,"minBaseVersionCode":734,"maxBaseVersionCode":734,"targetVersionCode":735,"targetVersionName":"5.3.0-dependency-visual-closure-r445","packageFile":"Lumi-Code735-Dependency-Visual-Closure-R445.zip","packageSha256":"98f49910c1174a7a83219b5da06e0c624a5939e826a838f194a2c851efc621d7","releaseNotes":"Dependency topology truth repair plus deterministic visible renderer baseline and framebuffer visibility gate."}
+          JSON
+          python3 -m json.tool .lumi/public-updates/latest-update.json >/dev/null
+      - name: Commit public update atomically
+        run: |
+          set -euo pipefail
+          git config user.name "Lumi Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .lumi/public-updates/Lumi-Code735-Dependency-Visual-Closure-R445.zip .lumi/public-updates/latest-update.json
+          git commit -m "publish(lumi): Code735 public update"
+          git push origin HEAD:main
