@@ -13,7 +13,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 
 /**
  * Lumi 1.0 OpenAI Responses client with a bounded local tool loop.
@@ -33,7 +32,7 @@ final class OpenAIReasoningClient {
                 String recent=recentTranscript==null?"":recentTranscript;
                 if(recent.length()>5000)recent=recent.substring(recent.length()-5000);
                 String input=presence+"\n"+memory+"\n"+(recent.trim().isEmpty()?"":"Recent active-session transcript:\n"+recent+"\n")+"Current user message: "+userText;
-                JSONObject first=new JSONObject();first.put("model",model);first.put("instructions",instructions);first.put("input",input);first.put("max_output_tokens",650);first.put("tools",LumiMaintenanceTools.definitions());
+                JSONObject first=new JSONObject();first.put("model",model);first.put("instructions",instructions);first.put("input",input);first.put("max_output_tokens",650);first.put("tools",allTools());
                 if(previousResponseId!=null&&!previousResponseId.trim().isEmpty())first.put("previous_response_id",previousResponseId);
                 JSONObject response=post(apiKey,first);String responseId=response.optString("id",previousResponseId==null?"":previousResponseId);
 
@@ -43,15 +42,26 @@ final class OpenAIReasoningClient {
                     JSONArray outputs=new JSONArray();
                     for(int i=0;i<calls.length();i++){
                         JSONObject call=calls.getJSONObject(i);String callId=call.optString("call_id","");String name=call.optString("name","");String rawArgs=call.optString("arguments","{}");JSONObject args;try{args=new JSONObject(rawArgs);}catch(Exception e){args=new JSONObject();}
-                        String result=LumiMaintenanceTools.execute(activity,prefs,name,args,userText);
+                        String result=PhoneHealthTools.handles(name)
+                                ? PhoneHealthTools.execute(activity,prefs,name,args)
+                                : LumiMaintenanceTools.execute(activity,prefs,name,args,userText);
                         outputs.put(new JSONObject().put("type","function_call_output").put("call_id",callId).put("output",result));
                     }
-                    JSONObject follow=new JSONObject();follow.put("model",model);follow.put("instructions",instructions);follow.put("input",outputs);follow.put("max_output_tokens",650);follow.put("tools",LumiMaintenanceTools.definitions());if(responseId!=null&&!responseId.isEmpty())follow.put("previous_response_id",responseId);
+                    JSONObject follow=new JSONObject();follow.put("model",model);follow.put("instructions",instructions);follow.put("input",outputs);follow.put("max_output_tokens",650);follow.put("tools",allTools());if(responseId!=null&&!responseId.isEmpty())follow.put("previous_response_id",responseId);
                     response=post(apiKey,follow);responseId=response.optString("id",responseId);
                 }
                 callback.onFailure("OpenAI maintenance tool loop exceeded Lumi's four-round safety limit.");
             }catch(Exception e){callback.onFailure(e.getClass().getSimpleName()+": "+safe(e.getMessage()));}
         },"LumiOpenAIReasoning").start();
+    }
+
+    private static JSONArray allTools() throws Exception {
+        JSONArray out=new JSONArray();
+        JSONArray maintenance=LumiMaintenanceTools.definitions();
+        for(int i=0;i<maintenance.length();i++)out.put(maintenance.get(i));
+        JSONArray phone=PhoneHealthTools.definitions();
+        for(int i=0;i<phone.length();i++)out.put(phone.get(i));
+        return out;
     }
 
     private static JSONObject post(String apiKey,JSONObject body)throws Exception{
