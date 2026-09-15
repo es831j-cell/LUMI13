@@ -1,0 +1,53 @@
+name: Import Code736 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code736-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Download verified Code736 artifact
+        env:
+          EXPORT_URL: "https://sdmntpreastus.oaiusercontent.com/files/00000000-4fbc-81f9-aa29-e1d9df83b935/raw?se=2026-09-15T00%3A44%3A43Z&sp=r&sv=2026-02-06&sr=b&scid=57df1e6f-75a7-5a2c-b4ed-633f5686a59d&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T18%3A44%3A10Z&ske=2026-09-15T18%3A44%3A10Z&sks=b&skv=2026-02-06&sig=hLXaxmMjI8p5ayCNUCq8/R3C0/9lSUC75DGqTkBB7I8%3D"
+        run: |
+          set -euo pipefail
+          curl --fail --location "$EXPORT_URL" -o /tmp/code736-export.zip
+          echo "4f39f704290c1faf1712e82fe3b83504fbf7ef4e4b885aa6a376e89f34ff7c03  /tmp/code736-export.zip" | sha256sum -c -
+          rm -rf /tmp/code736 && mkdir -p /tmp/code736
+          unzip -q /tmp/code736-export.zip -d /tmp/code736
+          PKG=$(find /tmp/code736 -type f -name 'Lumi-Code736-Visual-Finalization-R446.zip' -print -quit)
+          test -n "$PKG"
+          echo "3b07c0cee50957ce477677ce707f6b99ba7ad389bda6c6603400b8676c5b9a4a  $PKG" | sha256sum -c -
+          unzip -t "$PKG" >/dev/null
+          mkdir -p .lumi/public-updates
+          cp "$PKG" .lumi/public-updates/Lumi-Code736-Visual-Finalization-R446.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code736-visual-finalization-r446","baseVersionCode":735,"minBaseVersionCode":735,"maxBaseVersionCode":735,"targetVersionCode":736,"targetVersionName":"5.3.1-visual-finalization-r446","packageFile":"Lumi-Code736-Visual-Finalization-R446.zip","packageSha256":"3b07c0cee50957ce477677ce707f6b99ba7ad389bda6c6603400b8676c5b9a4a","releaseNotes":"Visual finalization: state-driven forest/listening, crimson/thinking, violet/speaking colors with six-second transitions plus authoritative framebuffer and palette evidence."}
+          JSON
+      - name: Commit phone-facing Code736
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .lumi/public-updates/Lumi-Code736-Visual-Finalization-R446.zip .lumi/public-updates/latest-update.json
+          git commit -m "publish(lumi): make Code736 phone-discoverable"
+          git push origin HEAD:main
+      - name: Verify live phone channel
+        run: |
+          set -euo pipefail
+          curl --fail --location "https://raw.githubusercontent.com/es831j-cell/LUMI13/main/.lumi/public-updates/latest-update.json?nocache=${GITHUB_RUN_ID}" | tee /tmp/live.json
+          grep -q '"targetVersionCode":736' /tmp/live.json
+          curl --fail --location "https://raw.githubusercontent.com/es831j-cell/LUMI13/main/.lumi/public-updates/Lumi-Code736-Visual-Finalization-R446.zip?nocache=${GITHUB_RUN_ID}" -o /tmp/live-package.zip
+          echo "3b07c0cee50957ce477677ce707f6b99ba7ad389bda6c6603400b8676c5b9a4a  /tmp/live-package.zip" | sha256sum -c -
