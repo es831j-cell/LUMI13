@@ -1,0 +1,57 @@
+name: Import Code737 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code737-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Download verified Code737 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://sdmntprwestus.oaiusercontent.com/files/00000000-88f0-8230-8f3f-2f57ff2efa3e/raw?se=2026-09-15T01%3A33%3A16Z&sp=r&sv=2026-02-06&sr=b&scid=1d51a651-0dbf-5750-893d-12f079ec97ea&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T18%3A59%3A27Z&ske=2026-09-15T18%3A59%3A27Z&sks=b&skv=2026-02-06&sig=cs8WAZFutHgv8u6TFEQh8I0pupDXRVf7zmiHHiOowJA%3D'
+          curl --fail --location --retry 3 --retry-delay 1 "$URL" -o /tmp/code737-export.zip
+          echo '7c73a671b5512c82c4d34364aa3f703bdfcdd078451e7690d50d6e2a42439e92  /tmp/code737-export.zip' | sha256sum -c -
+          rm -rf /tmp/code737-export && mkdir -p /tmp/code737-export
+          unzip -q /tmp/code737-export.zip -d /tmp/code737-export
+          test -s /tmp/code737-export/Lumi-Code737-Truth-Convergence-R447.zip
+          test -s /tmp/code737-export/Lumi-Code737-Truth-Convergence-R447.apk
+          echo '75b2382fab62824e10f63fd4b3b432e582d44e4272e3af15c59270de2d00dea4  /tmp/code737-export/Lumi-Code737-Truth-Convergence-R447.zip' | sha256sum -c -
+          echo '1e7d03515c50c9c814e958244cd871d02399dbfccb33f11c1d2533eaf4b182db  /tmp/code737-export/Lumi-Code737-Truth-Convergence-R447.apk' | sha256sum -c -
+      - name: Commit phone-facing Code737
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          cp /tmp/code737-export/Lumi-Code737-Truth-Convergence-R447.zip .lumi/public-updates/Lumi-Code737-Truth-Convergence-R447.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code737-truth-convergence-r447","baseVersionCode":736,"minBaseVersionCode":736,"maxBaseVersionCode":736,"targetVersionCode":737,"targetVersionName":"5.3.2-truth-convergence-r447","packageFile":"Lumi-Code737-Truth-Convergence-R447.zip","packageSha256":"75b2382fab62824e10f63fd4b3b432e582d44e4272e3af15c59270de2d00dea4","releaseNotes":"Truth convergence: dynamic installed-build evidence, dependency topology and runtime coverage separation, local self-diagnostics, current update/provider/source-correction truth, identity telemetry clarity, UI touch-target repair, stale visual metadata cleanup, and preservation of Code736 visual PASS without weakening frozen acceptance gates."}
+          JSON
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates/Lumi-Code737-Truth-Convergence-R447.zip .lumi/public-updates/latest-update.json
+          git diff --cached --quiet && { echo 'CODE737_ALREADY_PUBLISHED'; exit 0; }
+          git commit -m 'publish(lumi): Code737 Truth Convergence'
+          git push origin HEAD:main
+      - name: Verify live phone channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin main:refs/remotes/origin/main --depth=1
+          PTR=$(git show origin/main:.lumi/public-updates/latest-update.json)
+          printf '%s' "$PTR" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["targetVersionCode"]==737; assert p["packageSha256"]=="75b2382fab62824e10f63fd4b3b432e582d44e4272e3af15c59270de2d00dea4"'
+          git show origin/main:.lumi/public-updates/Lumi-Code737-Truth-Convergence-R447.zip > /tmp/live-code737.zip
+          echo '75b2382fab62824e10f63fd4b3b432e582d44e4272e3af15c59270de2d00dea4  /tmp/live-code737.zip' | sha256sum -c -
+          echo 'CODE737_PHONE_CHANNEL_PASS'
