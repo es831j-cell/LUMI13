@@ -1,0 +1,57 @@
+name: Import Code738 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code738-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Download verified Code738 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://sdmntprcentralus.oaiusercontent.com/files/00000000-35f8-81f5-a86b-c6ab54f4feb2/raw?se=2026-09-15T02%3A21%3A52Z&sp=r&sv=2026-02-06&sr=b&scid=549a874e-6f36-5dcd-959a-f276a288feee&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T18%3A52%3A33Z&ske=2026-09-15T18%3A52%3A33Z&sks=b&skv=2026-02-06&sig=egluGbWLZOuc3l1M1rVMF88edkvwhUbxfN8ZoDSa73c%3D'
+          curl --fail --location --retry 3 --retry-delay 1 "$URL" -o /tmp/code738-export.zip
+          echo '1b3fdb43981d9c3cf9860a059a737a8273b8b03b71f4b1532478116d265fbc7a  /tmp/code738-export.zip' | sha256sum -c -
+          rm -rf /tmp/code738-export && mkdir -p /tmp/code738-export
+          unzip -q /tmp/code738-export.zip -d /tmp/code738-export
+          test -s /tmp/code738-export/Lumi-Code738-TTS-Recovery-R448.zip
+          test -s /tmp/code738-export/Lumi-Code738-TTS-Recovery-R448.apk
+          echo '60f6da8182945901bddaf44d1a079cbc6d3c08844e124f86650b6d51ce395e1f  /tmp/code738-export/Lumi-Code738-TTS-Recovery-R448.zip' | sha256sum -c -
+          echo 'fc392c2e69e2817498edec9c890c26c76c97346bebec514c72119e2f3a92c7b2  /tmp/code738-export/Lumi-Code738-TTS-Recovery-R448.apk' | sha256sum -c -
+      - name: Commit phone-facing Code738
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lumi/public-updates
+          cp /tmp/code738-export/Lumi-Code738-TTS-Recovery-R448.zip .lumi/public-updates/Lumi-Code738-TTS-Recovery-R448.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code738-tts-recovery-r448","baseVersionCode":737,"minBaseVersionCode":737,"maxBaseVersionCode":737,"targetVersionCode":738,"targetVersionName":"5.3.3-tts-recovery-r448","packageFile":"Lumi-Code738-TTS-Recovery-R448.zip","packageSha256":"60f6da8182945901bddaf44d1a079cbc6d3c08844e124f86650b6d51ce395e1f","releaseNotes":"Voice recovery: handles Android TTS error -9 by quarantining unavailable voice data, selecting another installed local English voice, rebuilding and retrying full replies, recovering failed quick acknowledgements without replay, requesting cue audio focus, and adding requested/actual voice plus synthesis/output-route telemetry while preserving Code736/737 visual and truth-convergence behavior."}
+          JSON
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates/Lumi-Code738-TTS-Recovery-R448.zip .lumi/public-updates/latest-update.json
+          git diff --cached --quiet && { echo 'CODE738_ALREADY_PUBLISHED'; exit 0; }
+          git commit -m 'publish(lumi): Code738 TTS Recovery'
+          git push origin HEAD:main
+      - name: Verify live phone channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin main:refs/remotes/origin/main --depth=1
+          PTR=$(git show origin/main:.lumi/public-updates/latest-update.json)
+          printf '%s' "$PTR" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["targetVersionCode"]==738; assert p["packageSha256"]=="60f6da8182945901bddaf44d1a079cbc6d3c08844e124f86650b6d51ce395e1f"'
+          git show origin/main:.lumi/public-updates/Lumi-Code738-TTS-Recovery-R448.zip > /tmp/live-code738.zip
+          echo '60f6da8182945901bddaf44d1a079cbc6d3c08844e124f86650b6d51ce395e1f  /tmp/live-code738.zip' | sha256sum -c -
+          echo 'CODE738_PHONE_CHANNEL_PASS'
