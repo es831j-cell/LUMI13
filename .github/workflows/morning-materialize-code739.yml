@@ -1,0 +1,48 @@
+name: Morning materialize Code739 canonical source
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/morning-materialize-code739.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lumi-1.0-overnight
+          fetch-depth: 1
+      - name: Recover and verify Code739 canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=.lumi/public-updates/Lumi-Code739-Silent-Listening-R449.zip
+          echo '71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870  '"$PKG" | sha256sum -c -
+          rm -rf /tmp/c739 && mkdir -p /tmp/c739/pkg /tmp/c739/src
+          unzip -q "$PKG" -d /tmp/c739/pkg
+          test -s /tmp/c739/pkg/payload/canonical-source.zip
+          test -s /tmp/c739/pkg/payload/lumi-core.apk
+          unzip -q /tmp/c739/pkg/payload/canonical-source.zip -d /tmp/c739/src
+          grep -Eq 'versionCode[[:space:]]+739' /tmp/c739/src/app/build.gradle
+          grep -Fq "versionName '5.3.4-silent-listening-r449'" /tmp/c739/src/app/build.gradle
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n1)
+          "$AAPT" dump badging /tmp/c739/pkg/payload/lumi-core.apk > /tmp/c739/badging.txt
+          grep -Fq "package: name='com.distressedelk.lumi'" /tmp/c739/badging.txt
+          grep -Fq "versionCode='739'" /tmp/c739/badging.txt
+          mkdir -p .lumi/overnight/code739-canonical
+          cp /tmp/c739/pkg/payload/canonical-source.zip .lumi/overnight/code739-canonical/canonical-source.zip
+          sha256sum .lumi/overnight/code739-canonical/canonical-source.zip > .lumi/overnight/code739-canonical/canonical-source.sha256
+          printf '%s\n' 'Authority: canonical source embedded in signed Code739 distribution package' 'Distribution package SHA256: 71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870' 'Package: com.distressedelk.lumi' 'Version: 739 / 5.3.4-silent-listening-r449' > .lumi/overnight/code739-canonical/PROVENANCE.txt
+      - name: Commit recovered canonical source to overnight branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Lumi Morning Release'
+          git config user.email 'lumi-maintenance@users.noreply.github.com'
+          git add .lumi/overnight/code739-canonical
+          git diff --cached --quiet && exit 0
+          git commit -m 'materialize(lumi): verified Code739 canonical source'
+          git push origin HEAD:lumi-1.0-overnight
