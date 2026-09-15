@@ -1,0 +1,4 @@
+Authority: canonical source embedded in signed Code739 distribution package
+Distribution package SHA256: 71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870
+Package: com.distressedelk.lumi
+Version: 739 / 5.3.4-silent-listening-r449
