@@ -1,0 +1,171 @@
+name: Import Code740 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code740-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download verified Code740 factory artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://sdmntprsouthcentralus.oaiusercontent.com/files/00000000-c8a8-81f7-ab92-1dd1b1f2e776/raw?se=2026-09-15T18%3A18%3A30Z&sp=r&sv=2026-02-06&sr=b&scid=5c65b172-551a-5a98-8911-0da7b09eebe0&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-15T17%3A56%3A49Z&ske=2026-09-16T17%3A56%3A49Z&sks=b&skv=2026-02-06&sig=7zMe3MDYp1tiPji7eYKCEdKuZbKngqcII9/Zk1SNESk%3D'
+          curl --fail --location --retry 3 --retry-delay 1 "$URL" -o /tmp/code740-factory.zip
+          echo '2a09249b628142b1f8f67bb43f7b60cbc87aa31ebd5ab98cc463ba3edaca7400  /tmp/code740-factory.zip' | sha256sum -c -
+          rm -rf /tmp/code740 && mkdir -p /tmp/code740/factory /tmp/code740/package/payload
+          unzip -q /tmp/code740-factory.zip -d /tmp/code740/factory
+          cp /tmp/code740/factory/app/build/outputs/apk/debug/app-debug.apk /tmp/code740/package/payload/lumi-core.apk
+          cp /tmp/code740/factory/app/src/main/assets/lumi-source/canonical-source-baseline.zip /tmp/code740/package/payload/canonical-source.zip
+          test -s /tmp/code740/package/payload/lumi-core.apk
+          test -s /tmp/code740/package/payload/canonical-source.zip
+          echo 'a7e7cc101bd04389fdf3fc4bacae4d9d31ba2d3aa39c6c64f4d73a5fd3dd4cdc  /tmp/code740/package/payload/lumi-core.apk' | sha256sum -c -
+          echo '88aa8c0fc149c731ef81546d5ad0b595b03006c50cb11fbd03ab532419bb9043  /tmp/code740/package/payload/canonical-source.zip' | sha256sum -c -
+
+      - name: Verify Code740 APK identity and certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)
+          AAPT=$(find "${ANDROID_HOME}/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs /tmp/code740/package/payload/lumi-core.apk | tee /tmp/code740-apksigner.txt
+          grep -qi '0ad00784e2d593a469cb445d2cc1afe94e31663768f96470a38144e84efe8ad2' /tmp/code740-apksigner.txt
+          "$AAPT" dump badging /tmp/code740/package/payload/lumi-core.apk | tee /tmp/code740-badging.txt
+          grep -q "package: name='com.distressedelk.lumi' versionCode='740' versionName='5.3.5-barge-evidence-r450'" /tmp/code740-badging.txt
+
+      - name: Build Code740 source transaction and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/code740/package/payload/source.patch <<'TXT'
+          Code740 consolidated release-candidate transaction from Code739.
+          Material changes: stronger barge-in onset evidence gating; SpeechRecognizer lifecycle instrumentation; dynamic memory and evidence provenance; obsolete provenance cleanup; optional-provider failure isolation; audited Android permission/API compatibility repairs required by zero-error lint.
+          TXT
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('/tmp/code740/package')
+          update_id='code740-barge-evidence-r450'
+          base='3e931262c400e2b2eba734055ca35ef2360ad1b9b2bb20cb72a95bd7a9fd3153'
+          target='88aa8c0fc149c731ef81546d5ad0b595b03006c50cb11fbd03ab532419bb9043'
+          changed=[
+            'app/src/main/java/com/distressedelk/lumi/MainActivity.java',
+            'app/src/main/java/com/distressedelk/lumi/CloudBrainRouter.java',
+            'app/src/main/java/com/distressedelk/lumi/LumiConversationMemory.java',
+            'app/src/main/java/com/distressedelk/lumi/LumiSourceCorrectionManifest.java',
+            'app/src/main/java/com/distressedelk/lumi/LumiSourceCorrectionRegistry.java',
+            'app/src/main/java/com/distressedelk/lumi/LumiEvidenceLedger.java',
+            'app/src/main/java/com/distressedelk/lumi/DeviceHealthEngine.java',
+            'app/src/main/java/com/distressedelk/lumi/intelligence/EvidenceSet.java',
+            'app/src/main/java/com/distressedelk/lumi/intelligence/FreeWebEndpoints.java',
+            'app/src/main/java/com/distressedelk/lumi/LumiTileService.java',
+            'app/src/main/AndroidManifest.xml'
+          ]
+          rec={'format':'LumiSourceChangeRecord','formatVersion':1,'updateId':update_id,
+               'baseVersionCode':739,'targetVersionCode':740,'baseSourceSha256':base,
+               'targetSourceSha256':target,'filesChanged':changed,
+               'reason':'Consolidated Code740 release candidate with voice lifecycle, provenance, provider-routing, and Android compatibility repairs.'}
+          (root/'payload/source-change-record.json').write_text(json.dumps(rec,separators=(',',':'),sort_keys=True),encoding='utf-8')
+          paths=['payload/lumi-core.apk','payload/canonical-source.zip','payload/source-change-record.json','payload/source.patch']
+          files=[{'path':p,'sha256':hashlib.sha256((root/p).read_bytes()).hexdigest()} for p in paths]
+          notes=('Code740 consolidated candidate: stronger human barge-in evidence gating, SpeechRecognizer lifecycle instrumentation, '
+                 'dynamic memory/evidence provenance, optional-provider failure isolation, and audited Android compatibility repairs.')
+          manifest={'formatVersion':1,'updateId':update_id,'name':'Lumi Code740',
+                    'version':'5.3.5-barge-evidence-r450','type':'core','minAppVersionCode':739,'maxAppVersionCode':739,
+                    'releaseNotes':notes,'apk':{'path':'payload/lumi-core.apk'},
+                    'sourceRecord':{'formatVersion':1,'baseVersionCode':739,'targetVersionCode':740,
+                                    'baseSourceSha256':base,'targetSourceSha256':target,
+                                    'sourceArchivePath':'payload/canonical-source.zip',
+                                    'changeRecordPath':'payload/source-change-record.json','patchPath':'payload/source.patch'},
+                    'files':files}
+          (root/'lumi-update.json').write_text(json.dumps(manifest,separators=(',',':'),sort_keys=True),encoding='utf-8')
+          PY
+
+      - name: Sign Lumi update manifest with existing Lumi identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          javac release-tools/SignLumiManifest.java
+          STORE_FILE=$(awk -F= '$1=="storeFile"{print substr($0,index($0,"=")+1)}' app/keystore.properties)
+          STORE_PASS=$(awk -F= '$1=="storePassword"{print substr($0,index($0,"=")+1)}' app/keystore.properties)
+          KEY_ALIAS=$(awk -F= '$1=="keyAlias"{print substr($0,index($0,"=")+1)}' app/keystore.properties)
+          KEY_PASS=$(awk -F= '$1=="keyPassword"{print substr($0,index($0,"=")+1)}' app/keystore.properties)
+          java -cp release-tools SignLumiManifest "app/$STORE_FILE" "$STORE_PASS" "$KEY_ALIAS" "$KEY_PASS" /tmp/code740/package/lumi-update.json /tmp/code740/package/lumi-update.sig
+          test -s /tmp/code740/package/lumi-update.sig
+
+      - name: Assemble and verify Code740 public package
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=/tmp/code740/Lumi-Code740-Barge-Evidence-R450.zip
+          (cd /tmp/code740/package && zip -q -r "$PKG" lumi-update.json lumi-update.sig payload)
+          unzip -tq "$PKG"
+          SHA=$(sha256sum "$PKG" | awk '{print $1}')
+          echo "$SHA" > /tmp/code740-package-sha
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          p='/tmp/code740/Lumi-Code740-Barge-Evidence-R450.zip'
+          with zipfile.ZipFile(p) as z:
+              m=json.loads(z.read('lumi-update.json'))
+              assert m['formatVersion']==1 and m['type']=='core'
+              assert m['minAppVersionCode']==739 and m['maxAppVersionCode']==739
+              assert m['sourceRecord']['baseSourceSha256']=='3e931262c400e2b2eba734055ca35ef2360ad1b9b2bb20cb72a95bd7a9fd3153'
+              assert m['sourceRecord']['targetSourceSha256']=='88aa8c0fc149c731ef81546d5ad0b595b03006c50cb11fbd03ab532419bb9043'
+              assert z.read('lumi-update.sig').strip()
+              for f in m['files']:
+                  assert hashlib.sha256(z.read(f['path'])).hexdigest()==f['sha256']
+          PY
+
+      - name: Commit phone-facing Code740 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(cat .lumi/public-updates/latest-update.json)
+          printf '%s' "$CURRENT" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["targetVersionCode"]==739'
+          SHA=$(cat /tmp/code740-package-sha)
+          mkdir -p .lumi/public-updates
+          cp /tmp/code740/Lumi-Code740-Barge-Evidence-R450.zip .lumi/public-updates/Lumi-Code740-Barge-Evidence-R450.zip
+          python3 - "$SHA" <<'PY'
+          import json,pathlib,sys
+          sha=sys.argv[1]
+          p={'format':'LumiPublicUpdate','formatVersion':1,'updateId':'code740-barge-evidence-r450',
+             'baseVersionCode':739,'minBaseVersionCode':739,'maxBaseVersionCode':739,
+             'targetVersionCode':740,'targetVersionName':'5.3.5-barge-evidence-r450',
+             'packageFile':'Lumi-Code740-Barge-Evidence-R450.zip','packageSha256':sha,
+             'releaseNotes':'Code740 consolidated candidate: stronger human barge-in evidence gating, SpeechRecognizer lifecycle instrumentation, dynamic memory/evidence provenance, optional-provider failure isolation, and audited Android compatibility repairs.'}
+          pathlib.Path('.lumi/public-updates/latest-update.json').write_text(json.dumps(p,separators=(',',':'))+'\n',encoding='utf-8')
+          PY
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates/Lumi-Code740-Barge-Evidence-R450.zip .lumi/public-updates/latest-update.json
+          git commit -m 'publish(lumi): Code740 Barge Evidence'
+          git push origin HEAD:main
+
+      - name: Verify live phone channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED=$(cat /tmp/code740-package-sha)
+          git fetch --force origin main:refs/remotes/origin/main --depth=1
+          PTR=$(git show origin/main:.lumi/public-updates/latest-update.json)
+          printf '%s' "$PTR" | python3 -c 'import json,sys,os; p=json.load(sys.stdin); assert p["targetVersionCode"]==740; assert p["baseVersionCode"]==739; assert p["packageSha256"]==os.environ["EXPECTED"]' EXPECTED="$EXPECTED"
+          git show origin/main:.lumi/public-updates/Lumi-Code740-Barge-Evidence-R450.zip > /tmp/live-code740.zip
+          echo "$EXPECTED  /tmp/live-code740.zip" | sha256sum -c -
+          echo 'CODE740_PHONE_CHANNEL_PASS'
