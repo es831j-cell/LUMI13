@@ -1,0 +1,50 @@
+name: Verify Code740 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-code740-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Verify exact live pointer and package bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, zipfile
+          root=pathlib.Path('.lumi/public-updates')
+          ptr=json.loads((root/'latest-update.json').read_text(encoding='utf-8'))
+          assert ptr['format']=='LumiPublicUpdate' and ptr['formatVersion']==1
+          assert ptr['baseVersionCode']==739 and ptr['targetVersionCode']==740
+          assert ptr['minBaseVersionCode']==739 and ptr['maxBaseVersionCode']==739
+          assert ptr['targetVersionName']=='5.3.5-barge-evidence-r450'
+          pkg=root/ptr['packageFile']
+          assert pkg.is_file() and pkg.stat().st_size>0
+          actual=hashlib.sha256(pkg.read_bytes()).hexdigest()
+          assert actual==ptr['packageSha256'], (actual,ptr['packageSha256'])
+          with zipfile.ZipFile(pkg) as z:
+              names=set(z.namelist())
+              for required in ['lumi-update.json','lumi-update.sig','payload/lumi-core.apk','payload/canonical-source.zip','payload/source-change-record.json','payload/source.patch']:
+                  assert required in names, required
+              manifest=json.loads(z.read('lumi-update.json'))
+              assert manifest['updateId']=='code740-barge-evidence-r450'
+              assert manifest['type']=='core'
+              assert manifest['minAppVersionCode']==739 and manifest['maxAppVersionCode']==739
+              assert manifest['sourceRecord']['baseVersionCode']==739
+              assert manifest['sourceRecord']['targetVersionCode']==740
+              assert z.read('lumi-update.sig').strip()
+              for item in manifest['files']:
+                  assert hashlib.sha256(z.read(item['path'])).hexdigest()==item['sha256']
+          print('CODE740_PHONE_CHANNEL_PASS sha256='+actual)
+          PY
