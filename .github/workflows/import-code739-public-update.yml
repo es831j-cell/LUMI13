@@ -1,0 +1,59 @@
+name: Import Code739 public update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-code739-public-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Download verified Code739 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://sdmntprwestus.oaiusercontent.com/files/00000000-2520-8230-a299-847de4b19030/raw?se=2026-09-15T02%3A45%3A36Z&sp=r&sv=2026-02-06&sr=b&scid=cf94b02b-a29e-55e0-af03-9c29a40d5735&skoid=c953efd6-2ae8-41b4-a6d6-34b1475ac07c&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-14T18%3A44%3A10Z&ske=2026-09-15T18%3A44%3A10Z&sks=b&skv=2026-02-06&sig=Y1pFTDovE6MnheRKUe7RG8BH1SqzvIt%2Bn6LbyDIKNHM%3D'
+          curl --fail --location --retry 3 --retry-delay 1 "$URL" -o /tmp/code739-export.zip
+          echo '56c3a152c18460506ce899217cf331561adf47f38e61ea47d3ce5a997ad1ca01  /tmp/code739-export.zip' | sha256sum -c -
+          rm -rf /tmp/code739-export && mkdir -p /tmp/code739-export
+          unzip -q /tmp/code739-export.zip -d /tmp/code739-export
+          test -s /tmp/code739-export/Lumi-Code739-Silent-Listening-R449.zip
+          test -s /tmp/code739-export/Lumi-Code739-Silent-Listening-R449.apk
+          echo '71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870  /tmp/code739-export/Lumi-Code739-Silent-Listening-R449.zip' | sha256sum -c -
+          echo '982e276225b6c0b789e29073b423e072649673aed7bd6ef084bbc93e30ade8ed  /tmp/code739-export/Lumi-Code739-Silent-Listening-R449.apk' | sha256sum -c -
+      - name: Commit phone-facing Code739
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(cat .lumi/public-updates/latest-update.json)
+          printf '%s' "$CURRENT" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["targetVersionCode"]==738'
+          mkdir -p .lumi/public-updates
+          cp /tmp/code739-export/Lumi-Code739-Silent-Listening-R449.zip .lumi/public-updates/Lumi-Code739-Silent-Listening-R449.zip
+          cat > .lumi/public-updates/latest-update.json <<'JSON'
+          {"format":"LumiPublicUpdate","formatVersion":1,"updateId":"code739-silent-listening-r449","baseVersionCode":738,"minBaseVersionCode":738,"maxBaseVersionCode":738,"targetVersionCode":739,"targetVersionName":"5.3.4-silent-listening-r449","packageFile":"Lumi-Code739-Silent-Listening-R449.zip","packageSha256":"71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870","releaseNotes":"Silent listening: suppresses OEM Android SpeechRecognizer start/stop cue bloops with a short reversible SYSTEM+NOTIFICATION stream envelope, 320 ms pre-arm lead, and automatic restore on READY/error/results/failsafe. STREAM_MUSIC, alarms, calls, Code738 TTS recovery, visuals, and truth-convergence behavior remain untouched."}
+          JSON
+          git config user.name 'Lumi Public Distribution'
+          git config user.email 'lumi-distribution@users.noreply.github.com'
+          git add .lumi/public-updates/Lumi-Code739-Silent-Listening-R449.zip .lumi/public-updates/latest-update.json
+          git diff --cached --quiet && { echo 'CODE739_ALREADY_PUBLISHED'; exit 0; }
+          git commit -m 'publish(lumi): Code739 Silent Listening'
+          git push origin HEAD:main
+      - name: Verify live phone channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin main:refs/remotes/origin/main --depth=1
+          PTR=$(git show origin/main:.lumi/public-updates/latest-update.json)
+          printf '%s' "$PTR" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["targetVersionCode"]==739; assert p["packageSha256"]=="71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870"'
+          git show origin/main:.lumi/public-updates/Lumi-Code739-Silent-Listening-R449.zip > /tmp/live-code739.zip
+          echo '71a1e7d5c8a63e8e0fb29ebfe435d7d156b0e0544de7a0b6ffd407932d982870  /tmp/live-code739.zip' | sha256sum -c -
+          echo 'CODE739_PHONE_CHANNEL_PASS'
