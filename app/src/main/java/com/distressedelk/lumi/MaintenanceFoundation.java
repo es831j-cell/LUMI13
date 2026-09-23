@@ -33,6 +33,7 @@ final class MaintenanceFoundation {
                 File out=new File(root,name);
                 if(!out.isFile() || out.length()<16) copyAsset(context,asset,out);
             }
+            LumiModuleRegistry.initialize(context,prefs);
             prefs.edit()
                     .putBoolean("lumi_1_0_foundation_ready",true)
                     .putBoolean("direct_maintenance_host_ready",true)
@@ -40,7 +41,7 @@ final class MaintenanceFoundation {
                     .putInt("memory_vault_schema",1)
                     .putLong("lumi_1_0_foundation_initialized_at",System.currentTimeMillis())
                     .apply();
-            vault.ledger("bootstrap","Lumi 1.0 maintenance foundation ready","Memory Vault and native maintenance tool host initialized.","");
+            vault.ledger("bootstrap","Lumi 1.0 maintenance foundation ready","Memory Vault, module registry, and native maintenance tool host initialized.","");
         }catch(Exception e){
             prefs.edit().putBoolean("lumi_1_0_foundation_ready",false).putString("lumi_1_0_foundation_error",e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())).apply();
         }
